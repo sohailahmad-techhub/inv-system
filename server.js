@@ -111,6 +111,10 @@ const generalLimiter = rateLimit({
 // Apply general rate limiting
 app.use('/api', generalLimiter);
 
+// Raw body middleware for webhooks (must be before JSON parser)
+app.use('/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use('/paypal/webhook', express.raw({ type: 'application/json' }));
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
