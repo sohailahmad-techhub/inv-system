@@ -64,6 +64,23 @@ const userSchema = new mongoose.Schema({
   },
   passwordResetExpires: {
     type: Date
+  },
+  // Multitenancy support
+  tenantId: {
+    type: String,
+    default: 'default'
+  },
+  // User preferences and settings
+  preferences: {
+    timezone: { type: String, default: 'UTC' },
+    currency: { type: String, default: 'USD' },
+    dateFormat: { type: String, default: 'MM/DD/YYYY' },
+    theme: { type: String, enum: ['light', 'dark'], default: 'light' },
+    notifications: {
+      email: { type: Boolean, default: true },
+      sms: { type: Boolean, default: false },
+      push: { type: Boolean, default: true }
+    }
   }
 }, {
   timestamps: true,

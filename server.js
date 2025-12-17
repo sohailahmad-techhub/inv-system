@@ -8,10 +8,63 @@ const connectDB = require('./config/database');
 // Import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
-const paymentRoutes = require('./routes/payments');
 const invoiceRoutes = require('./routes/invoices');
-const stripeRoutes = require('./routes/stripe');
-const paypalRoutes = require('./routes/paypal');
+const paymentRoutes = require('./routes/payments');
+const expenseRoutes = require('./routes/expenses');
+const integrationRoutes = require('./routes/integrations');
+const webhookRoutes = require('./routes/webhooks');
+const bulkRoutes = require('./routes/bulk');
+const reportRoutes = require('./routes/reports');
+const publicPaymentRoutes = require('./routes/payment');
+
+// Swagger documentation
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
+
+// Swagger configuration
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Invoice Management System API',
+      version: '1.0.0',
+      description: 'Advanced invoice management system with AI features, integrations, and comprehensive reporting',
+      contact: {
+        name: 'API Support',
+        email: 'support@invoicesystem.com'
+      }
+    },
+    servers: [
+      {
+        url: process.env.NODE_ENV === 'production' 
+          ? 'https://your-domain.com/api' 
+          : `http://localhost:${process.env.PORT || 5000}/api`,
+        description: process.env.NODE_ENV === 'production' ? 'Production server' : 'Development server'
+      }
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT'
+        }
+      }
+    },
+    security: [
+      {
+        bearerAuth: []
+      }
+    ]
+  },
+  apis: [
+    './controllers/*.js',
+    './routes/*.js',
+    './models/*.js'
+  ]
+};
+
+const specs = swaggerJsdoc(swaggerOptions);
 
 const app = express();
 
@@ -76,13 +129,27 @@ app.get('/health', (req, res) => {
   });
 });
 
+// API documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
+  explorer: true,
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Invoice Management API Documentation'
+}));
+
 // Routes
 app.use('/auth', authLimiter, authRoutes);
 app.use('/users', userRoutes);
-app.use('/payments', paymentRoutes);
 app.use('/invoices', invoiceRoutes);
-app.use('/stripe', stripeRoutes);
-app.use('/paypal', paypalRoutes);
+app.use('/bulk', bulkRoutes); // Bulk operations
+app.use('/payments', paymentRoutes);
+app.use('/expenses', expenseRoutes);
+app.use('/integrations', integrationRoutes);
+app.use('/webhooks', webhookRoutes);
+app.use('/reports', reportRoutes);
+
+// Public payment routes (no auth required)
+app.use('/pay', publicPaymentRoutes);
+app.use('/webhooks', publicPaymentRoutes); // Payment gateway webhooks
 
 // 404 handler
 app.use('*', (req, res) => {

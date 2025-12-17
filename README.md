@@ -1,10 +1,11 @@
-# JWT Authentication & Role-Based Access Control System with Payment Management
+# JWT Authentication & Role-Based Access Control System
+## with Dashboard & Reporting APIs
 
-A complete JWT-based authentication system with role-based access control and comprehensive payment management built with Node.js, Express, MongoDB, Stripe, and PayPal.
+A complete JWT-based authentication system with role-based access control, comprehensive analytics, and reporting APIs built with Node.js, Express, and MongoDB.
 
 ## Features
 
-### Authentication APIs
+### 🔐 Authentication APIs
 - ✅ **POST /auth/register** - User registration with email validation
 - ✅ **POST /auth/login** - User login returning JWT token
 - ✅ **POST /auth/logout** - Token blacklist on logout
@@ -13,7 +14,7 @@ A complete JWT-based authentication system with role-based access control and co
 - ✅ **POST /auth/forgot-password** - Password reset request
 - ✅ **POST /auth/reset-password** - Password reset with token
 
-### User Management APIs
+### 👥 User Management APIs
 - ✅ **POST /users** - Create user (Admin only)
 - ✅ **GET /users** - List all users with pagination (Admin only)
 - ✅ **GET /users/:id** - Get user details
@@ -23,35 +24,99 @@ A complete JWT-based authentication system with role-based access control and co
 - ✅ **GET /users/profile** - Get own profile
 - ✅ **PUT /users/profile** - Update own profile
 
-### Invoice Management APIs
-- ✅ **POST /invoices** - Create invoice (Admin/Accountant)
-- ✅ **GET /invoices** - List invoices with filters
-- ✅ **GET /invoices/:id** - Get invoice details
-- ✅ **PUT /invoices/:id** - Update invoice (Admin/Accountant)
-- ✅ **DELETE /invoices/:id** - Delete invoice (Admin)
-- ✅ **GET /invoices/:id/payment-status** - Get detailed payment status
-- ✅ **POST /invoices/mark-overdue** - Mark overdue invoices
+### 📊 Dashboard & Analytics APIs
 
-### Payment Management APIs
-- ✅ **POST /payments** - Record manual payment (Admin/Accountant)
-- ✅ **GET /payments** - List payments with filters (Admin/Accountant)
-- ✅ **GET /payments/:id** - Get payment details
-- ✅ **PUT /payments/:id** - Update payment status (Admin/Accountant)
-- ✅ **DELETE /payments/:id** - Delete pending payment (Admin)
-- ✅ **POST /payments/:id/refund** - Issue refund (Admin/Accountant)
-- ✅ **GET /payments/reconcile** - Payment reconciliation report
+#### Dashboard Metrics APIs
+- ✅ **GET /dashboard/summary** - Total revenue (month/year/all-time), pending payments, overdue invoices, total clients, average invoice value
+- ✅ **GET /dashboard/revenue-chart** - Monthly/yearly revenue graph data with configurable period
+- ✅ **GET /dashboard/pending-invoices** - List pending invoices with pagination
+- ✅ **GET /dashboard/overdue-invoices** - List overdue invoices with pagination
+- ✅ **GET /dashboard/recent-invoices** - Latest 10 invoices
+- ✅ **GET /dashboard/top-clients** - Top clients by revenue (all-time, monthly, yearly)
 
-### Stripe Integration
-- ✅ **POST /stripe/checkout** - Create Stripe payment session
-- ✅ **POST /stripe/webhook** - Handle Stripe webhook events
-- ✅ **GET /stripe/payment/:id** - Check Stripe payment status
-- ✅ **POST /stripe/refund/:id** - Process Stripe refund
+#### Client Analytics APIs
+- ✅ **GET /analytics/clients/:id** - Comprehensive client analytics:
+  - Total invoices count and revenue
+  - Average invoice value and payment time
+  - Payment history (last 12 months)
+  - Outstanding balance and status breakdown
+  - Date range filtering support
 
-### PayPal Integration
-- ✅ **POST /paypal/create-order** - Create PayPal order
-- ✅ **POST /paypal/capture-order** - Capture PayPal payment
-- ✅ **POST /paypal/webhook** - Handle PayPal webhook events
-- ✅ **POST /paypal/refund/:id** - Process PayPal refund
+#### Invoice Analytics APIs
+- ✅ **GET /analytics/invoices** - Invoice analytics with:
+  - Total invoices by status (paid, unpaid, overdue)
+  - Monthly invoice trends
+  - Invoice value distribution ranges
+  - Average payment time analysis
+  - Overdue payment rates
+
+#### Payment Analytics APIs
+- ✅ **GET /analytics/payments** - Payment analytics including:
+  - Total payments and amount breakdown
+  - Payment method distribution and success rates
+  - Processing time analysis
+  - Monthly payment trends
+  - Fee and net amount calculations
+
+### 📄 Export & Reporting APIs
+- ✅ **POST /export/invoices-pdf** - Export invoices list as PDF with filters
+- ✅ **POST /export/invoices-excel** - Export invoices to Excel/CSV with filters
+- ✅ **POST /export/reports-pdf** - Export financial summary and client analysis reports as PDF
+- ✅ **POST /export/financial-statement** - Generate detailed financial statements (revenue, expenses, profit)
+- ✅ **POST /export/tax-report** - Generate tax reports by year and region
+
+### ⚡ Performance Features
+- ✅ **Intelligent Caching** - Dashboard data cached for 2-15 minutes based on data volatility
+- ✅ **MongoDB Indexing** - Optimized indexes for frequently queried fields
+- ✅ **Aggregation Pipelines** - Efficient MongoDB aggregation for complex analytics
+- ✅ **Pagination** - All list endpoints support pagination for better performance
+
+### 🗄️ Data Models
+
+#### Invoice Model
+```javascript
+{
+  invoiceNumber: String (unique, auto-generated),
+  clientId: ObjectId (ref: User),
+  createdBy: ObjectId (ref: User),
+  items: [{
+    description: String,
+    quantity: Number,
+    unitPrice: Number,
+    total: Number
+  }],
+  subtotal: Number,
+  taxAmount: Number,
+  discountAmount: Number,
+  total: Number,
+  currency: String,
+  status: Enum ('DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'),
+  issueDate: Date,
+  dueDate: Date,
+  paidDate: Date,
+  notes: String,
+  isDeleted: Boolean
+}
+```
+
+#### Payment Model
+```javascript
+{
+  paymentNumber: String (unique, auto-generated),
+  invoiceId: ObjectId (ref: Invoice),
+  clientId: ObjectId (ref: User),
+  amount: Number,
+  currency: String,
+  paymentMethod: Enum ('CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'BANK_TRANSFER', 'CHECK', 'PAYPAL', 'STRIPE', 'OTHER'),
+  status: Enum ('PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'),
+  transactionId: String,
+  paymentDate: Date,
+  processedDate: Date,
+  fees: Number,
+  netAmount: Number,
+  isDeleted: Boolean
+}
+```
 
 ## Database Schema
 
@@ -263,7 +328,7 @@ APP_NAME=Your Company Name
 
 ## API Usage Examples
 
-### Authentication
+### 🔐 Authentication
 
 #### Register User
 ```bash
@@ -313,7 +378,7 @@ Content-Type: application/json
 }
 ```
 
-### User Management
+### 👥 User Management
 
 #### Get All Users (Admin only)
 ```bash
@@ -350,6 +415,164 @@ Content-Type: application/json
   "role": "ADMIN"
 }
 ```
+
+### 📊 Dashboard & Analytics
+
+#### Dashboard Summary
+```bash
+GET /dashboard/summary
+Authorization: Bearer <access_token>
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "revenue": {
+      "thisMonth": 15420.50,
+      "thisYear": 185430.75,
+      "allTime": 542150.25
+    },
+    "pendingPayments": {
+      "amount": 8750.00,
+      "count": 12
+    },
+    "overdueInvoices": {
+      "count": 3,
+      "amount": 2450.00
+    },
+    "totalClients": 47,
+    "averageInvoiceValue": 315.75
+  }
+}
+```
+
+#### Revenue Chart Data
+```bash
+GET /dashboard/revenue-chart?period=monthly&year=2024
+Authorization: Bearer <access_token>
+```
+
+#### Client Analytics
+```bash
+GET /analytics/clients/64a7b8c9d1e2f34567890123?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer <access_token>
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "client": {
+      "id": "64a7b8c9d1e2f34567890123",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "companyName": "Acme Corp"
+    },
+    "metrics": {
+      "totalInvoices": 24,
+      "totalRevenue": 15680.50,
+      "averageInvoiceValue": 653.35,
+      "outstandingBalance": 1850.00,
+      "averagePaymentTime": 8.5
+    },
+    "paymentHistory": [
+      {
+        "period": "2024-12",
+        "amount": 2450.00,
+        "count": 3
+      }
+    ],
+    "invoiceStatus": [
+      {
+        "status": "PAID",
+        "count": 20,
+        "totalValue": 13060.50
+      }
+    ]
+  }
+}
+```
+
+#### Invoice Analytics with Filters
+```bash
+GET /analytics/invoices?startDate=2024-01-01&endDate=2024-12-31&status=PAID
+Authorization: Bearer <access_token>
+```
+
+#### Payment Analytics
+```bash
+GET /analytics/payments?paymentMethod=CREDIT_CARD&startDate=2024-01-01
+Authorization: Bearer <access_token>
+```
+
+### 📄 Export & Reporting
+
+#### Export Invoices as PDF
+```bash
+POST /export/invoices-pdf
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "filters": {
+    "status": "PAID",
+    "startDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "clientId": "64a7b8c9d1e2f34567890123"
+  }
+}
+```
+
+#### Export Financial Statement
+```bash
+POST /export/financial-statement
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "startDate": "2024-01-01",
+  "endDate": "2024-12-31"
+}
+```
+
+#### Generate Tax Report
+```bash
+POST /export/tax-report
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "year": 2024,
+  "region": "US"
+}
+```
+
+#### Export Client Analysis Report
+```bash
+POST /export/reports-pdf
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "reportType": "client-analysis",
+  "filters": {}
+}
+```
+
+### 🔍 Query Parameters & Filters
+
+All analytics endpoints support comprehensive filtering:
+
+- **Date Range**: `startDate`, `endDate` (ISO 8601 format)
+- **Pagination**: `page` (default: 1), `limit` (default: 10, max: 100)
+- **Status Filtering**: `status` for invoices/payments
+- **Client Filtering**: `clientId` for client-specific data
+- **Period Selection**: `period` (all, month, year) for trend analysis
+- **Payment Method**: `paymentMethod` for payment analytics
+- **Year/Month**: `year`, `month` for specific period queries
 
 ## Test Accounts
 
@@ -461,40 +684,3 @@ Before deploying to production:
 6. Configure proper email service for password resets
 7. Set up monitoring and logging
 8. Consider using a process manager like PM2
-9. Configure Stripe live mode credentials
-10. Configure PayPal live mode credentials
-11. Set up webhook endpoints with proper SSL
-12. Test webhook delivery and signature verification
-13. Enable payment gateway logging and monitoring
-
-## Payment System Features
-
-The system includes a complete payment management solution:
-
-### Supported Payment Methods
-- **Manual Entry**: Cash, Bank Transfer, Card
-- **Stripe**: Credit/Debit card processing with automatic status updates
-- **PayPal**: Order creation and capture with webhook support
-
-### Key Capabilities
-- Invoice creation with line items, tax, and discounts
-- Automatic payment status tracking (Unpaid, Paid, Partially Paid, Overdue)
-- Partial payment support with balance tracking
-- Refund processing for both manual and gateway payments
-- Payment reconciliation reports
-- Transaction ID storage for all payments
-- Webhook handling for Stripe and PayPal
-- Role-based access control for payment operations
-
-### Payment Workflow
-1. Admin/Accountant creates invoice for client
-2. Client receives invoice with remaining balance
-3. Payment can be made via:
-   - Manual entry by admin/accountant
-   - Stripe online payment
-   - PayPal online payment
-4. Payment automatically updates invoice status
-5. Webhooks confirm online payments
-6. System tracks all transactions with audit trail
-
-For complete payment system documentation, API examples, and integration guides, see [PAYMENT_SYSTEM_README.md](./PAYMENT_SYSTEM_README.md)

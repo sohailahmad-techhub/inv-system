@@ -1,91 +1,35 @@
 const express = require('express');
 const router = express.Router();
-const { validationResult } = require('express-validator');
 const {
-  recordPayment,
   getPayments,
-  getPaymentById,
+  getPayment,
+  createPayment,
   updatePayment,
   deletePayment,
-  refundPayment,
-  reconcilePayments
+  processExternalPayment,
+  getPaymentAnalytics,
+  generatePaymentReceipt
 } = require('../controllers/paymentController');
-const { authenticate } = require('../middleware/auth');
-const { authorize } = require('../middleware/authorize');
-const {
-  recordPaymentValidation,
-  getPaymentsValidation,
-  updatePaymentValidation,
-  refundPaymentValidation
-} = require('../middleware/paymentValidation');
-
-// Validation error handler middleware
-const handleValidationErrors = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      errors: errors.array()
-    });
-  }
-  next();
-};
+const { auth } = require('../middleware/auth');
 
 // All routes require authentication
-router.use(authenticate);
+router.use(auth);
 
-// Payment reconciliation (ADMIN, ACCOUNTANT only)
-router.get(
-  '/reconcile',
-  authorize('ADMIN', 'ACCOUNTANT'),
-  reconcilePayments
-);
+// Payment CRUD operations
+router.route('/')
+  .get(getPayments)
+  .post(createPayment);
 
-// Record payment (manual entry - ADMIN, ACCOUNTANT only)
-router.post(
-  '/',
-  authorize('ADMIN', 'ACCOUNTANT'),
-  recordPaymentValidation,
-  handleValidationErrors,
-  recordPayment
-);
+router.route('/:id')
+  .get(getPayment)
+  .put(updatePayment)
+  .delete(deletePayment);
 
-// Get all payments with filters (ADMIN, ACCOUNTANT only)
-router.get(
-  '/',
-  authorize('ADMIN', 'ACCOUNTANT'),
-  getPaymentsValidation,
-  handleValidationErrors,
-  getPayments
-);
+// Payment actions
+router.post('/:id/process-external', processExternalPayment);
+router.get('/:id/receipt', generatePaymentReceipt);
 
-// Get payment details
-router.get('/:id', getPaymentById);
-
-// Update payment status (ADMIN, ACCOUNTANT only)
-router.put(
-  '/:id',
-  authorize('ADMIN', 'ACCOUNTANT'),
-  updatePaymentValidation,
-  handleValidationErrors,
-  updatePayment
-);
-
-// Delete pending payment (ADMIN only)
-router.delete(
-  '/:id',
-  authorize('ADMIN'),
-  deletePayment
-);
-
-// Issue refund (ADMIN, ACCOUNTANT only)
-router.post(
-  '/:id/refund',
-  authorize('ADMIN', 'ACCOUNTANT'),
-  refundPaymentValidation,
-  handleValidationErrors,
-  refundPayment
-);
+// Analytics
+router.get('/analytics', getPaymentAnalytics);
 
 module.exports = router;
