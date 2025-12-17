@@ -23,7 +23,22 @@
     "dotenv": "^16.3.1",
     "express-async-handler": "^1.2.0",
     "nodemailer": "^6.9.4",
-    "crypto": "^1.0.1"
+    "crypto": "^1.0.1",
+    "puppeteer": "^21.0.0",
+    "qrcode": "^1.5.3",
+    "uuid": "^9.0.0",
+    "axios": "^1.5.0",
+    "ml-matrix": "^6.10.4",
+    "ml-regression": "^6.1.0",
+    "node-cron": "^3.0.2",
+    "jszip": "^3.10.1",
+    "csv-parser": "^3.0.0",
+    "multer": "^1.4.5-lts.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0",
+    "simple-oauth2": "^5.0.0",
+    "xml2js": "^0.6.2",
+    "crypto-js": "^4.1.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
