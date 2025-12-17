@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum TaxType {
+  VAT
+  GST
+  CUSTOM
+}
+
+model Client {
+  id          String    @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  taxId       String?
+  companyName String?
+  country     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  invoices    Invoice[]
+
+  @@index([email])
+  @@index([name])
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  userId        String
+
+  items         InvoiceItem[]
+
+  subtotal      Decimal
+  tax           Decimal
+  total         Decimal
+
+  status        InvoiceStatus @default(DRAFT)
+
+  issuedDate    DateTime
+  dueDate       DateTime?
+
+  notes         String?
+  logo          String?
+
+  currencyCode  String?
+  currency      Currency?     @relation(fields: [currencyCode], references: [code])
+
+  language      String?
+
+  templateId    String?
+  template      InvoiceTemplate? @relation(fields: [templateId], references: [id])
+
+  taxId         String?
+  taxRule       Tax?          @relation(fields: [taxId], references: [id])
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([status])
+  @@index([issuedDate])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description String
+  quantity    Int
+  rate        Decimal
+  discount    Decimal  @default(0)
+  taxable     Boolean  @default(true)
+  amount      Decimal
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([invoiceId])
+}
+
+model InvoiceTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  layout    String
+  fields    Json
+  css       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices  Invoice[]
+
+  @@index([name])
+}
+
+model Tax {
+  id        String   @id @default(cuid())
+  name      String
+  rate      Decimal
+  type      TaxType
+  country   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices  Invoice[]
+
+  @@index([country])
+  @@index([type])
+}
+
+model Currency {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  symbol       String
+  exchangeRate Decimal  @default(1)
+  isDefault    Boolean  @default(false)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  invoices     Invoice[]
+}
+
+model InvoiceNumberSettings {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  prefix    String   @default("INV")
+  separator String   @default("-")
+  padding   Int      @default(4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sequences InvoiceNumberSequence[]
+}
+
+model InvoiceNumberSequence {
+  id         String   @id @default(cuid())
+  settingsId String
+  settings   InvoiceNumberSettings @relation(fields: [settingsId], references: [id], onDelete: Cascade)
+
+  year       Int
+  nextNumber Int
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([settingsId, year])
+}
