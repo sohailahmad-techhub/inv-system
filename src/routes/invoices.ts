@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Prisma, InvoiceStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/errors";
@@ -7,6 +7,16 @@ import { prisma } from "../lib/prisma";
 import { parseBody, parseQuery } from "../lib/validation";
 import { computeInvoiceItems, computeTotals } from "../services/invoiceTotals";
 import { generateInvoiceNumber } from "../services/invoiceNumbering";
+import { generateInvoicePdf } from "../services/pdfGenerator";
+
+// Define InvoiceStatus locally as it was removed from Prisma Schema for SQLite compatibility
+const InvoiceStatus = {
+  DRAFT: 'DRAFT',
+  SENT: 'SENT',
+  PAID: 'PAID',
+  OVERDUE: 'OVERDUE',
+  CANCELLED: 'CANCELLED',
+} as const;
 
 export const invoicesRouter = Router();
 
@@ -453,5 +463,37 @@ invoicesRouter.post(
     });
 
     res.status(201).json(created);
+  })
+);
+
+invoicesRouter.post(
+  "/:id/generate-pdf",
+  asyncHandler(async (req, res) => {
+    const id = z.string().min(1).parse(req.params.id);
+
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: {
+        client: true,
+        items: true,
+        template: true,
+        taxRule: true,
+        currency: true,
+      },
+    });
+
+    if (!invoice) {
+      throw new ApiError("Invoice not found", 404);
+    }
+
+    const pdfBuffer = await generateInvoicePdf(invoice);
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="invoice-${invoice.invoiceNumber}.pdf"`,
+      "Content-Length": pdfBuffer.length.toString(),
+    });
+
+    res.send(pdfBuffer);
   })
 );

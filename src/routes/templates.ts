@@ -10,7 +10,7 @@ export const templatesRouter = Router();
 const createTemplateSchema = z.object({
   name: z.string().min(1),
   layout: z.string().min(1),
-  fields: z.unknown(),
+  fields: z.record(z.string(), z.unknown()),
   css: z.string().optional(),
 });
 
@@ -27,12 +27,12 @@ templatesRouter.post(
       data: {
         name: body.name,
         layout: body.layout,
-        fields: body.fields,
+        fields: JSON.stringify(body.fields),
         css: body.css,
       },
     });
 
-    res.status(201).json(template);
+    res.status(201).json({ ...template, fields: JSON.parse(template.fields) });
   })
 );
 
@@ -40,7 +40,7 @@ templatesRouter.get(
   "/",
   asyncHandler(async (_req, res) => {
     const templates = await prisma.invoiceTemplate.findMany({ orderBy: [{ createdAt: "desc" }] });
-    res.json(templates);
+    res.json(templates.map(t => ({ ...t, fields: JSON.parse(t.fields) })));
   })
 );
 
@@ -55,7 +55,12 @@ templatesRouter.put(
       throw new ApiError("Template not found", 404);
     }
 
-    const updated = await prisma.invoiceTemplate.update({ where: { id }, data: body });
-    res.json(updated);
+    const data: any = { ...body };
+    if (body.fields) {
+        data.fields = JSON.stringify(body.fields);
+    }
+
+    const updated = await prisma.invoiceTemplate.update({ where: { id }, data });
+    res.json({ ...updated, fields: JSON.parse(updated.fields) });
   })
 );

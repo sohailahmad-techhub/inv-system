@@ -1,10 +1,16 @@
 import { Router } from "express";
-import { TaxType } from "@prisma/client";
 import { z } from "zod";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { parseBody } from "../lib/validation";
+
+// Define TaxType locally as it was removed from Prisma Schema for SQLite compatibility
+const TaxType = {
+  VAT: 'VAT',
+  GST: 'GST',
+  CUSTOM: 'CUSTOM',
+} as const;
 
 export const taxesRouter = Router();
 
