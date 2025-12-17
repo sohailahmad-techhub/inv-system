@@ -1,11 +1,10 @@
 const mongoose = require('mongoose');
 
 const paymentSchema = new mongoose.Schema({
-  paymentNumber: {
+  paymentId: {
     type: String,
-    required: true,
     unique: true,
-    trim: true
+    required: true
   },
   invoiceId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -24,172 +23,83 @@ const paymentSchema = new mongoose.Schema({
   },
   currency: {
     type: String,
-    required: true,
     default: 'USD',
     uppercase: true
   },
-  paymentMethod: {
+  method: {
     type: String,
-    enum: ['CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'BANK_TRANSFER', 'CHECK', 'PAYPAL', 'STRIPE', 'OTHER'],
+    enum: ['credit_card', 'bank_transfer', 'cash', 'check', 'paypal', 'stripe', 'other'],
     required: true
   },
   status: {
     type: String,
-    enum: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
-    default: 'PENDING'
-  },
-  transactionId: {
-    type: String,
-    trim: true
-  },
-  referenceNumber: {
-    type: String,
-    trim: true
+    enum: ['pending', 'completed', 'failed', 'refunded', 'cancelled'],
+    default: 'pending'
   },
   paymentDate: {
     type: Date,
-    required: true,
     default: Date.now
   },
-  processedDate: {
-    type: Date
-  },
-  failureReason: {
+  reference: {
     type: String,
     trim: true
-  },
-  fees: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  netAmount: {
-    type: Number,
-    required: true,
-    min: 0
   },
   notes: {
     type: String,
     trim: true
   },
-  metadata: {
-    type: mongoose.Schema.Types.Mixed
+  // External payment processor data
+  externalData: {
+    processor: String, // 'stripe', 'paypal', etc.
+    transactionId: String,
+    fee: Number,
+    netAmount: Number,
+    rawResponse: mongoose.Schema.Types.Mixed
   },
-  isDeleted: {
-    type: Boolean,
-    default: false
+  // Receipt data
+  receipt: {
+    receiptNumber: String,
+    receiptUrl: String,
+    generatedAt: { type: Date, default: Date.now }
+  },
+  // Refund information
+  refunds: [{
+    amount: Number,
+    reason: String,
+    date: Date,
+    refundId: String
+  }],
+  // Integration tracking
+  syncStatus: {
+    quickbooks: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' },
+    xero: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' },
+    freshbooks: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' }
+  },
+  // Multitenancy
+  tenantId: {
+    type: String,
+    required: true
   }
 }, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  timestamps: true
 });
 
-// Indexes for performance
+// Indexes
 paymentSchema.index({ invoiceId: 1 });
 paymentSchema.index({ clientId: 1 });
-paymentSchema.index({ paymentNumber: 1 });
+paymentSchema.index({ paymentId: 1 });
 paymentSchema.index({ paymentDate: -1 });
-paymentSchema.index({ paymentMethod: 1 });
+paymentSchema.index({ tenantId: 1 });
 paymentSchema.index({ status: 1 });
-paymentSchema.index({ amount: 1 });
-paymentSchema.index({ processedDate: -1 });
-paymentSchema.index({ createdAt: -1 });
 
-// Virtual for processing time
-paymentSchema.virtual('processingTime').get(function() {
-  if (this.processedDate && this.paymentDate) {
-    const diffTime = this.processedDate - this.paymentDate;
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // days
-  }
-  return null;
-});
-
-// Pre-save middleware to calculate net amount
+// Pre-save middleware to generate payment ID
 paymentSchema.pre('save', function(next) {
-  this.netAmount = this.amount - this.fees;
-  if (this.status === 'COMPLETED' && !this.processedDate) {
-    this.processedDate = new Date();
+  if (!this.paymentId) {
+    const timestamp = Date.now().toString();
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    this.paymentId = `PAY-${timestamp}-${random}`;
   }
   next();
 });
-
-// Static method to generate payment number
-paymentSchema.statics.generatePaymentNumber = async function() {
-  const year = new Date().getFullYear();
-  const month = String(new Date().getMonth() + 1).padStart(2, '0');
-  
-  const lastPayment = await this.findOne({
-    paymentNumber: new RegExp(`^PAY-${year}${month}`)
-  }).sort({ paymentNumber: -1 });
-
-  let sequence = 1;
-  if (lastPayment) {
-    const lastSequence = parseInt(lastPayment.paymentNumber.split('-')[2]);
-    sequence = lastSequence + 1;
-  }
-
-  return `PAY-${year}${month}-${String(sequence).padStart(4, '0')}`;
-};
-
-// Static method to get payments by method
-paymentSchema.statics.getPaymentsByMethod = function() {
-  return this.aggregate([
-    { $match: { status: 'COMPLETED', isDeleted: false } },
-    {
-      $group: {
-        _id: '$paymentMethod',
-        totalAmount: { $sum: '$amount' },
-        count: { $sum: 1 },
-        totalFees: { $sum: '$fees' },
-        netAmount: { $sum: '$netAmount' }
-      }
-    },
-    {
-      $project: {
-        paymentMethod: '$_id',
-        totalAmount: 1,
-        count: 1,
-        totalFees: 1,
-        netAmount: 1,
-        _id: 0
-      }
-    },
-    { $sort: { totalAmount: -1 } }
-  ]);
-};
-
-// Static method to get payment analytics
-paymentSchema.statics.getPaymentAnalytics = function(filters = {}) {
-  const matchStage = { 
-    status: 'COMPLETED', 
-    isDeleted: false,
-    ...filters 
-  };
-
-  return this.aggregate([
-    { $match: matchStage },
-    {
-      $group: {
-        _id: null,
-        totalPayments: { $sum: 1 },
-        totalAmount: { $sum: '$amount' },
-        totalFees: { $sum: '$fees' },
-        netAmount: { $sum: '$netAmount' },
-        averagePayment: { $avg: '$amount' }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        totalPayments: 1,
-        totalAmount: { $round: ['$totalAmount', 2] },
-        totalFees: { $round: ['$totalFees', 2] },
-        netAmount: { $round: ['$netAmount', 2] },
-        averagePayment: { $round: ['$averagePayment', 2] }
-      }
-    }
-  ]);
-};
 
 module.exports = mongoose.model('Payment', paymentSchema);

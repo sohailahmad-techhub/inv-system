@@ -9,8 +9,7 @@ const invoiceItemSchema = new mongoose.Schema({
   quantity: {
     type: Number,
     required: true,
-    min: 0,
-    default: 1
+    min: 0
   },
   unitPrice: {
     type: Number,
@@ -28,8 +27,7 @@ const invoiceSchema = new mongoose.Schema({
   invoiceNumber: {
     type: String,
     required: true,
-    unique: true,
-    trim: true
+    unique: true
   },
   clientId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -47,12 +45,13 @@ const invoiceSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
-  taxAmount: {
+  taxRate: {
     type: Number,
     default: 0,
-    min: 0
+    min: 0,
+    max: 100
   },
-  discountAmount: {
+  taxAmount: {
     type: Number,
     default: 0,
     min: 0
@@ -64,19 +63,17 @@ const invoiceSchema = new mongoose.Schema({
   },
   currency: {
     type: String,
-    required: true,
     default: 'USD',
     uppercase: true
   },
   status: {
     type: String,
-    enum: ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'],
-    default: 'DRAFT'
+    enum: ['draft', 'sent', 'viewed', 'paid', 'overdue', 'cancelled'],
+    default: 'draft'
   },
   issueDate: {
     type: Date,
-    required: true,
-    default: Date.now
+    required: true
   },
   dueDate: {
     type: Date,
@@ -91,18 +88,88 @@ const invoiceSchema = new mongoose.Schema({
   },
   paymentTerms: {
     type: String,
-    trim: true,
-    default: 'Net 30'
+    default: 'Net 30 days'
   },
-  lateFee: {
-    type: Number,
-    default: 0,
-    min: 0
+  // QR Code related fields
+  qrCodeData: {
+    type: String
   },
-  isDeleted: {
+  qrCodeGenerated: {
     type: Boolean,
     default: false
-  }
+  },
+  qrCodeSize: {
+    type: Number,
+    default: 200
+  },
+  qrCodePosition: {
+    x: { type: Number, default: 450 },
+    y: { type: Number, default: 700 }
+  },
+  // AI Prediction fields
+  paymentPrediction: {
+    likelihood: { type: Number, min: 0, max: 1 },
+    predictedDate: { type: Date },
+    confidence: { type: Number, min: 0, max: 1 },
+    lastCalculated: { type: Date }
+  },
+  // Fraud Detection fields
+  fraudCheck: {
+    isFlagged: { type: Boolean, default: false },
+    riskScore: { type: Number, min: 0, max: 1 },
+    flags: [{ type: String }],
+    lastChecked: { type: Date },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    reviewedAt: { type: Date }
+  },
+  // Tax and region fields
+  taxRegion: {
+    type: String,
+    enum: ['US', 'EU', 'INDIA', 'UK', 'CANADA', 'OTHER'],
+    default: 'US'
+  },
+  taxObligations: [{
+    region: String,
+    taxType: String, // GST, VAT, Sales Tax
+    rate: Number,
+    amount: Number,
+    filed: { type: Boolean, default: false },
+    filingDate: Date
+  }],
+  // Integration fields
+  externalIds: {
+    quickbooksId: String,
+    xeroId: String,
+    freshbooksId: String
+  },
+  syncStatus: {
+    quickbooks: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' },
+    xero: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' },
+    freshbooks: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' }
+  },
+  // Payment tracking
+  payments: [{
+    paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' },
+    amount: Number,
+    date: Date,
+    method: String
+  }],
+  // Bulk generation tracking
+  bulkGenerated: {
+    batchId: String,
+    rowNumber: Number
+  },
+  // Multitenancy
+  tenantId: {
+    type: String,
+    required: true
+  },
+  // PDF and metadata
+  pdfUrl: String,
+  pdfGenerated: { type: Boolean, default: false },
+  lastSent: Date,
+  reminderSent: { type: Boolean, default: false },
+  overdueNotified: { type: Boolean, default: false }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -110,73 +177,57 @@ const invoiceSchema = new mongoose.Schema({
 });
 
 // Indexes for performance
-invoiceSchema.index({ clientId: 1, status: 1 });
-invoiceSchema.index({ createdBy: 1 });
 invoiceSchema.index({ invoiceNumber: 1 });
-invoiceSchema.index({ issueDate: -1 });
-invoiceSchema.index({ dueDate: 1 });
+invoiceSchema.index({ clientId: 1 });
+invoiceSchema.index({ createdBy: 1 });
 invoiceSchema.index({ status: 1 });
-invoiceSchema.index({ total: 1 });
+invoiceSchema.index({ dueDate: 1 });
+invoiceSchema.index({ tenantId: 1 });
 invoiceSchema.index({ createdAt: -1 });
-
-// Virtual for overdue status
-invoiceSchema.virtual('isOverdue').get(function() {
-  return this.status !== 'PAID' && this.status !== 'CANCELLED' && new Date() > this.dueDate;
-});
 
 // Virtual for days overdue
 invoiceSchema.virtual('daysOverdue').get(function() {
-  if (this.isOverdue) {
-    const today = new Date();
-    const dueDate = new Date(this.dueDate);
-    const diffTime = today - dueDate;
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  if (this.status !== 'paid' && new Date() > this.dueDate) {
+    return Math.ceil((new Date() - this.dueDate) / (1000 * 60 * 60 * 24));
   }
   return 0;
 });
 
+// Virtual for total paid
+invoiceSchema.virtual('totalPaid').get(function() {
+  return this.payments.reduce((total, payment) => total + payment.amount, 0);
+});
+
+// Virtual for remaining balance
+invoiceSchema.virtual('remainingBalance').get(function() {
+  return this.total - this.totalPaid;
+});
+
 // Pre-save middleware to calculate totals
 invoiceSchema.pre('save', function(next) {
-  if (this.items && this.items.length > 0) {
-    this.subtotal = this.items.reduce((sum, item) => sum + item.total, 0);
-    this.total = this.subtotal + this.taxAmount - this.discountAmount + this.lateFee;
-  }
+  // Calculate subtotal
+  this.subtotal = this.items.reduce((sum, item) => sum + item.total, 0);
+  
+  // Calculate tax
+  this.taxAmount = this.subtotal * (this.taxRate / 100);
+  
+  // Calculate total
+  this.total = this.subtotal + this.taxAmount;
+  
+  // Update QR code data with payment URL
+  this.qrCodeData = `${process.env.BASE_URL || 'http://localhost:3000'}/pay/${this._id}`;
+  
   next();
 });
 
-// Static method to generate invoice number
-invoiceSchema.statics.generateInvoiceNumber = async function() {
-  const year = new Date().getFullYear();
-  const month = String(new Date().getMonth() + 1).padStart(2, '0');
-  
-  // Get the last invoice number for this year-month
-  const lastInvoice = await this.findOne({
-    invoiceNumber: new RegExp(`^INV-${year}${month}`)
-  }).sort({ invoiceNumber: -1 });
-
-  let sequence = 1;
-  if (lastInvoice) {
-    const lastSequence = parseInt(lastInvoice.invoiceNumber.split('-')[2]);
-    sequence = lastSequence + 1;
-  }
-
-  return `INV-${year}${month}-${String(sequence).padStart(4, '0')}`;
+// Method to check if invoice is overdue
+invoiceSchema.methods.isOverdue = function() {
+  return this.status !== 'paid' && new Date() > this.dueDate;
 };
 
-// Static method to get overdue invoices
-invoiceSchema.statics.getOverdueInvoices = function() {
-  return this.find({
-    status: { $in: ['SENT', 'OVERDUE'] },
-    dueDate: { $lt: new Date() },
-    isDeleted: false
-  });
-};
-
-// Method to mark as paid
-invoiceSchema.methods.markAsPaid = function(paymentDate = new Date()) {
-  this.status = 'PAID';
-  this.paidDate = paymentDate;
-  return this.save();
+// Method to get payment likelihood
+invoiceSchema.methods.getPaymentLikelihood = function() {
+  return this.paymentPrediction ? this.paymentPrediction.likelihood : 0;
 };
 
 module.exports = mongoose.model('Invoice', invoiceSchema);
