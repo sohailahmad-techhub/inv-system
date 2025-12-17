@@ -8,6 +8,9 @@ const connectDB = require('./config/database');
 // Import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
+const dashboardRoutes = require('./routes/dashboard');
+const analyticsRoutes = require('./routes/analytics');
+const exportRoutes = require('./routes/export');
 
 const app = express();
 
@@ -71,6 +74,9 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/auth', authLimiter, authRoutes);
 app.use('/users', userRoutes);
+app.use('/dashboard', dashboardRoutes);
+app.use('/analytics', analyticsRoutes);
+app.use('/export', exportRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

@@ -1,10 +1,11 @@
 # JWT Authentication & Role-Based Access Control System
+## with Dashboard & Reporting APIs
 
-A complete JWT-based authentication system with role-based access control built with Node.js, Express, and MongoDB.
+A complete JWT-based authentication system with role-based access control, comprehensive analytics, and reporting APIs built with Node.js, Express, and MongoDB.
 
 ## Features
 
-### Authentication APIs
+### 🔐 Authentication APIs
 - ✅ **POST /auth/register** - User registration with email validation
 - ✅ **POST /auth/login** - User login returning JWT token
 - ✅ **POST /auth/logout** - Token blacklist on logout
@@ -13,7 +14,7 @@ A complete JWT-based authentication system with role-based access control built 
 - ✅ **POST /auth/forgot-password** - Password reset request
 - ✅ **POST /auth/reset-password** - Password reset with token
 
-### User Management APIs
+### 👥 User Management APIs
 - ✅ **POST /users** - Create user (Admin only)
 - ✅ **GET /users** - List all users with pagination (Admin only)
 - ✅ **GET /users/:id** - Get user details
@@ -22,6 +23,100 @@ A complete JWT-based authentication system with role-based access control built 
 - ✅ **PUT /users/:id/role** - Change user role (Admin only)
 - ✅ **GET /users/profile** - Get own profile
 - ✅ **PUT /users/profile** - Update own profile
+
+### 📊 Dashboard & Analytics APIs
+
+#### Dashboard Metrics APIs
+- ✅ **GET /dashboard/summary** - Total revenue (month/year/all-time), pending payments, overdue invoices, total clients, average invoice value
+- ✅ **GET /dashboard/revenue-chart** - Monthly/yearly revenue graph data with configurable period
+- ✅ **GET /dashboard/pending-invoices** - List pending invoices with pagination
+- ✅ **GET /dashboard/overdue-invoices** - List overdue invoices with pagination
+- ✅ **GET /dashboard/recent-invoices** - Latest 10 invoices
+- ✅ **GET /dashboard/top-clients** - Top clients by revenue (all-time, monthly, yearly)
+
+#### Client Analytics APIs
+- ✅ **GET /analytics/clients/:id** - Comprehensive client analytics:
+  - Total invoices count and revenue
+  - Average invoice value and payment time
+  - Payment history (last 12 months)
+  - Outstanding balance and status breakdown
+  - Date range filtering support
+
+#### Invoice Analytics APIs
+- ✅ **GET /analytics/invoices** - Invoice analytics with:
+  - Total invoices by status (paid, unpaid, overdue)
+  - Monthly invoice trends
+  - Invoice value distribution ranges
+  - Average payment time analysis
+  - Overdue payment rates
+
+#### Payment Analytics APIs
+- ✅ **GET /analytics/payments** - Payment analytics including:
+  - Total payments and amount breakdown
+  - Payment method distribution and success rates
+  - Processing time analysis
+  - Monthly payment trends
+  - Fee and net amount calculations
+
+### 📄 Export & Reporting APIs
+- ✅ **POST /export/invoices-pdf** - Export invoices list as PDF with filters
+- ✅ **POST /export/invoices-excel** - Export invoices to Excel/CSV with filters
+- ✅ **POST /export/reports-pdf** - Export financial summary and client analysis reports as PDF
+- ✅ **POST /export/financial-statement** - Generate detailed financial statements (revenue, expenses, profit)
+- ✅ **POST /export/tax-report** - Generate tax reports by year and region
+
+### ⚡ Performance Features
+- ✅ **Intelligent Caching** - Dashboard data cached for 2-15 minutes based on data volatility
+- ✅ **MongoDB Indexing** - Optimized indexes for frequently queried fields
+- ✅ **Aggregation Pipelines** - Efficient MongoDB aggregation for complex analytics
+- ✅ **Pagination** - All list endpoints support pagination for better performance
+
+### 🗄️ Data Models
+
+#### Invoice Model
+```javascript
+{
+  invoiceNumber: String (unique, auto-generated),
+  clientId: ObjectId (ref: User),
+  createdBy: ObjectId (ref: User),
+  items: [{
+    description: String,
+    quantity: Number,
+    unitPrice: Number,
+    total: Number
+  }],
+  subtotal: Number,
+  taxAmount: Number,
+  discountAmount: Number,
+  total: Number,
+  currency: String,
+  status: Enum ('DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'),
+  issueDate: Date,
+  dueDate: Date,
+  paidDate: Date,
+  notes: String,
+  isDeleted: Boolean
+}
+```
+
+#### Payment Model
+```javascript
+{
+  paymentNumber: String (unique, auto-generated),
+  invoiceId: ObjectId (ref: Invoice),
+  clientId: ObjectId (ref: User),
+  amount: Number,
+  currency: String,
+  paymentMethod: Enum ('CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'BANK_TRANSFER', 'CHECK', 'PAYPAL', 'STRIPE', 'OTHER'),
+  status: Enum ('PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'),
+  transactionId: String,
+  paymentDate: Date,
+  processedDate: Date,
+  fees: Number,
+  netAmount: Number,
+  isDeleted: Boolean
+}
+```
 
 ## Database Schema
 
@@ -139,7 +234,7 @@ BCRYPT_SALT_ROUNDS=12
 
 ## API Usage Examples
 
-### Authentication
+### 🔐 Authentication
 
 #### Register User
 ```bash
@@ -189,7 +284,7 @@ Content-Type: application/json
 }
 ```
 
-### User Management
+### 👥 User Management
 
 #### Get All Users (Admin only)
 ```bash
@@ -226,6 +321,164 @@ Content-Type: application/json
   "role": "ADMIN"
 }
 ```
+
+### 📊 Dashboard & Analytics
+
+#### Dashboard Summary
+```bash
+GET /dashboard/summary
+Authorization: Bearer <access_token>
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "revenue": {
+      "thisMonth": 15420.50,
+      "thisYear": 185430.75,
+      "allTime": 542150.25
+    },
+    "pendingPayments": {
+      "amount": 8750.00,
+      "count": 12
+    },
+    "overdueInvoices": {
+      "count": 3,
+      "amount": 2450.00
+    },
+    "totalClients": 47,
+    "averageInvoiceValue": 315.75
+  }
+}
+```
+
+#### Revenue Chart Data
+```bash
+GET /dashboard/revenue-chart?period=monthly&year=2024
+Authorization: Bearer <access_token>
+```
+
+#### Client Analytics
+```bash
+GET /analytics/clients/64a7b8c9d1e2f34567890123?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer <access_token>
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "client": {
+      "id": "64a7b8c9d1e2f34567890123",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "companyName": "Acme Corp"
+    },
+    "metrics": {
+      "totalInvoices": 24,
+      "totalRevenue": 15680.50,
+      "averageInvoiceValue": 653.35,
+      "outstandingBalance": 1850.00,
+      "averagePaymentTime": 8.5
+    },
+    "paymentHistory": [
+      {
+        "period": "2024-12",
+        "amount": 2450.00,
+        "count": 3
+      }
+    ],
+    "invoiceStatus": [
+      {
+        "status": "PAID",
+        "count": 20,
+        "totalValue": 13060.50
+      }
+    ]
+  }
+}
+```
+
+#### Invoice Analytics with Filters
+```bash
+GET /analytics/invoices?startDate=2024-01-01&endDate=2024-12-31&status=PAID
+Authorization: Bearer <access_token>
+```
+
+#### Payment Analytics
+```bash
+GET /analytics/payments?paymentMethod=CREDIT_CARD&startDate=2024-01-01
+Authorization: Bearer <access_token>
+```
+
+### 📄 Export & Reporting
+
+#### Export Invoices as PDF
+```bash
+POST /export/invoices-pdf
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "filters": {
+    "status": "PAID",
+    "startDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "clientId": "64a7b8c9d1e2f34567890123"
+  }
+}
+```
+
+#### Export Financial Statement
+```bash
+POST /export/financial-statement
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "startDate": "2024-01-01",
+  "endDate": "2024-12-31"
+}
+```
+
+#### Generate Tax Report
+```bash
+POST /export/tax-report
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "year": 2024,
+  "region": "US"
+}
+```
+
+#### Export Client Analysis Report
+```bash
+POST /export/reports-pdf
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "reportType": "client-analysis",
+  "filters": {}
+}
+```
+
+### 🔍 Query Parameters & Filters
+
+All analytics endpoints support comprehensive filtering:
+
+- **Date Range**: `startDate`, `endDate` (ISO 8601 format)
+- **Pagination**: `page` (default: 1), `limit` (default: 10, max: 100)
+- **Status Filtering**: `status` for invoices/payments
+- **Client Filtering**: `clientId` for client-specific data
+- **Period Selection**: `period` (all, month, year) for trend analysis
+- **Payment Method**: `paymentMethod` for payment analytics
+- **Year/Month**: `year`, `month` for specific period queries
 
 ## Test Accounts
 
