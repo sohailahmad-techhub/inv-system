@@ -43,6 +43,12 @@ const authenticate = async (req, res, next) => {
 
     // Add user to request object
     req.user = user;
+    
+    // Add tenant ID if not present (for backward compatibility)
+    if (!req.user.tenantId) {
+      req.user.tenantId = 'default';
+    }
+    
     next();
     
   } catch (error) {
@@ -68,4 +74,6 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticate };
+const auth = authenticate;
+
+module.exports = { auth };
