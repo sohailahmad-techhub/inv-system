@@ -5,13 +5,14 @@ const {
   getInvoiceAnalytics,
   getPaymentAnalytics
 } = require('../controllers/analyticsController');
+const { auth } = require('../middleware/auth');
 const { authorize } = require('../middleware/authorize');
 const { cacheEndpoint } = require('../utils/cache');
 
 const router = express.Router();
 
-// Apply authentication to all analytics routes
-router.use(authorize(['ADMIN', 'ACCOUNTANT']));
+router.use(auth);
+router.use(authorize('ADMIN', 'ACCOUNTANT'));
 
 // Client analytics (cached for 10 minutes)
 router.get('/clients/:id',

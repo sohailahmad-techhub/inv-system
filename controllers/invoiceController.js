@@ -11,28 +11,36 @@ const puppeteer = require('puppeteer');
 // @route   GET /api/invoices
 // @access  Private
 const getInvoices = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 10;
   const skip = (page - 1) * limit;
-  
-  // Get tenant ID from user or header
+
   const tenantId = req.user?.tenantId || req.headers['x-tenant-id'] || 'default';
-  
+
   const query = { tenantId };
-  
-  // Apply filters
+
+  if (req.user?.role === 'CLIENT') {
+    query.clientId = req.user._id;
+  } else if (req.query.clientId) {
+    query.clientId = req.query.clientId;
+  }
+
   if (req.query.status) {
     query.status = req.query.status;
   }
-  if (req.query.clientId) {
-    query.clientId = req.query.clientId;
+
+  if (req.query.paymentStatus) {
+    query.paymentStatus = req.query.paymentStatus;
   }
-  if (req.query.dateFrom || req.query.dateTo) {
+
+  const startDate = req.query.startDate || req.query.dateFrom;
+  const endDate = req.query.endDate || req.query.dateTo;
+  if (startDate || endDate) {
     query.issueDate = {};
-    if (req.query.dateFrom) query.issueDate.$gte = new Date(req.query.dateFrom);
-    if (req.query.dateTo) query.issueDate.$lte = new Date(req.query.dateTo);
+    if (startDate) query.issueDate.$gte = new Date(startDate);
+    if (endDate) query.issueDate.$lte = new Date(endDate);
   }
-  
+
   const invoices = await Invoice.find(query)
     .populate('clientId', 'firstName lastName email companyName')
     .populate('createdBy', 'firstName lastName email')
@@ -73,7 +81,12 @@ const getInvoice = asyncHandler(async (req, res) => {
     res.status(403);
     throw new Error('Access denied');
   }
-  
+
+  if (req.user?.role === 'CLIENT' && invoice.clientId?._id?.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error('Access denied');
+  }
+
   res.json({
     success: true,
     data: invoice
@@ -85,49 +98,75 @@ const getInvoice = asyncHandler(async (req, res) => {
 // @access  Private
 const createInvoice = asyncHandler(async (req, res) => {
   const {
+    invoiceNumber: providedInvoiceNumber,
     clientId,
-    items,
+    items = [],
+    tax,
     taxRate,
+    discount,
+    totalAmount,
     currency,
     issueDate,
     dueDate,
     notes,
+    terms,
     paymentTerms
   } = req.body;
-  
-  // Get tenant ID
+
   const tenantId = req.user?.tenantId || req.headers['x-tenant-id'] || 'default';
-  
-  // Validate client exists and belongs to same tenant
+
   const client = await User.findById(clientId);
   if (!client) {
     res.status(404);
     throw new Error('Client not found');
   }
-  
-  // Generate invoice number
-  const invoiceCount = await Invoice.countDocuments({ tenantId });
-  const invoiceNumber = `INV-${(invoiceCount + 1).toString().padStart(6, '0')}`;
-  
-  // Calculate totals and create items
-  const processedItems = items.map(item => ({
-    description: item.description,
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    total: item.quantity * item.unitPrice
-  }));
-  
+
+  let invoiceNumber = providedInvoiceNumber?.trim();
+
+  if (invoiceNumber) {
+    const exists = await Invoice.findOne({ tenantId, invoiceNumber });
+    if (exists) {
+      res.status(400);
+      throw new Error('Invoice number already exists');
+    }
+  } else {
+    const invoiceCount = await Invoice.countDocuments({ tenantId });
+    invoiceNumber = `INV-${(invoiceCount + 1).toString().padStart(6, '0')}`;
+  }
+
+  const processedItems = items.map((item) => {
+    const lineAmount =
+      typeof item.amount === 'number'
+        ? item.amount
+        : typeof item.unitPrice === 'number' && typeof item.quantity === 'number'
+          ? item.unitPrice * item.quantity
+          : 0;
+
+    return {
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      amount: lineAmount,
+      total: lineAmount
+    };
+  });
+
   const invoice = await Invoice.create({
     invoiceNumber,
     clientId,
     createdBy: req.user._id,
     items: processedItems,
     taxRate: taxRate || 0,
+    tax,
+    discount,
+    totalAmount,
     currency: currency || 'USD',
     issueDate: issueDate ? new Date(issueDate) : new Date(),
     dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     notes,
-    paymentTerms,
+    terms,
+    paymentTerms: paymentTerms || terms,
+    paidAmount: 0,
     tenantId
   });
   
@@ -180,32 +219,51 @@ const updateInvoice = asyncHandler(async (req, res) => {
   // Update fields
   const {
     items,
+    tax,
     taxRate,
+    discount,
+    totalAmount,
     currency,
     dueDate,
     notes,
+    terms,
     paymentTerms,
     qrCodeSize,
     qrCodePosition
   } = req.body;
-  
+
   if (items) {
-    invoice.items = items.map(item => ({
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      total: item.quantity * item.unitPrice
-    }));
+    invoice.items = items.map((item) => {
+      const lineAmount =
+        typeof item.amount === 'number'
+          ? item.amount
+          : typeof item.unitPrice === 'number' && typeof item.quantity === 'number'
+            ? item.unitPrice * item.quantity
+            : 0;
+
+      return {
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        amount: lineAmount,
+        total: lineAmount
+      };
+    });
   }
-  
+
   if (taxRate !== undefined) invoice.taxRate = taxRate;
+  if (tax !== undefined) invoice.tax = tax;
+  if (discount !== undefined) invoice.discount = discount;
+  if (totalAmount !== undefined) invoice.totalAmount = totalAmount;
   if (currency) invoice.currency = currency;
   if (dueDate) invoice.dueDate = new Date(dueDate);
   if (notes !== undefined) invoice.notes = notes;
+  if (terms !== undefined) invoice.terms = terms;
   if (paymentTerms) invoice.paymentTerms = paymentTerms;
+  if (!paymentTerms && terms) invoice.paymentTerms = terms;
   if (qrCodeSize) invoice.qrCodeSize = qrCodeSize;
   if (qrCodePosition) invoice.qrCodePosition = qrCodePosition;
-  
+
   await invoice.save();
   
   // Re-run fraud detection and payment prediction if amounts changed
@@ -786,6 +844,94 @@ function generateInvoiceHTML(invoice) {
   `;
 }
 
+// @desc    Get invoice payment status and summary
+// @route   GET /invoices/:id/payment-status
+// @access  Private
+const getInvoicePaymentStatus = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id)
+    .populate('clientId', 'firstName lastName email companyName')
+    .populate('createdBy', 'firstName lastName email');
+
+  if (!invoice) {
+    return res.status(404).json({
+      success: false,
+      message: 'Invoice not found'
+    });
+  }
+
+  const tenantId = req.user?.tenantId || req.headers['x-tenant-id'] || 'default';
+  if (invoice.tenantId !== tenantId) {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied'
+    });
+  }
+
+  if (req.user?.role === 'CLIENT' && invoice.clientId?._id?.toString() !== req.user._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied'
+    });
+  }
+
+  const payments = await Payment.find({
+    invoiceId: invoice._id,
+    isDeleted: false
+  }).sort({ paymentDate: -1 });
+
+  const paymentSummary = {
+    totalPayments: payments.length,
+    completedCount: payments.filter((p) => p.status === 'Completed').length,
+    pendingCount: payments.filter((p) => p.status === 'Pending').length,
+    failedCount: payments.filter((p) => p.status === 'Failed').length,
+    refundedCount: payments.filter((p) => p.status === 'Refunded').length,
+    totalCompleted: payments
+      .filter((p) => p.status === 'Completed')
+      .reduce((sum, p) => sum + (p.amount || 0), 0),
+    totalRefunded: payments
+      .filter((p) => p.status === 'Refunded')
+      .reduce((sum, p) => sum + (p.refundedAmount || 0), 0)
+  };
+
+  res.json({
+    success: true,
+    data: {
+      invoice,
+      payments,
+      paymentSummary
+    }
+  });
+});
+
+// @desc    Mark overdue invoices
+// @route   POST /invoices/mark-overdue
+// @access  Private (ADMIN, ACCOUNTANT)
+const markOverdueInvoices = asyncHandler(async (req, res) => {
+  const tenantId = req.user?.tenantId || req.headers['x-tenant-id'] || 'default';
+  const now = new Date();
+
+  const result = await Invoice.updateMany(
+    {
+      tenantId,
+      paymentStatus: { $in: ['Unpaid', 'Partially Paid'] },
+      dueDate: { $lt: now }
+    },
+    {
+      $set: {
+        paymentStatus: 'Overdue',
+        status: 'overdue'
+      }
+    }
+  );
+
+  res.json({
+    success: true,
+    data: {
+      count: result.modifiedCount || 0
+    }
+  });
+});
+
 // Helper function to trigger webhooks
 async function triggerWebhook(event, data) {
   // This would integrate with your webhook system
@@ -799,6 +945,8 @@ module.exports = {
   createInvoice,
   updateInvoice,
   deleteInvoice,
+  getInvoicePaymentStatus,
+  markOverdueInvoices,
   sendInvoice,
   markInvoicePaid,
   generateInvoicePDF,

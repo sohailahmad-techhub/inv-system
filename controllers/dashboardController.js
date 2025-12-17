@@ -3,164 +3,123 @@ const Invoice = require('../models/Invoice');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 
-// Helper function to get date ranges
-const getDateRanges = () => {
+const getDateRanges = (year = new Date().getFullYear()) => {
+  const startOfYear = new Date(year, 0, 1);
+  const endOfYear = new Date(year + 1, 0, 1);
+
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-  
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
   return {
-    currentMonth: { $gte: startOfMonth, $lte: now },
-    currentYear: { $gte: startOfYear, $lte: now },
-    last30Days: { $gte: thirtyDaysAgo, $lte: now },
-    allTime: {}
+    year: { $gte: startOfYear, $lt: endOfYear },
+    month: { $gte: startOfMonth, $lt: endOfMonth }
   };
 };
 
-// GET /dashboard/summary
 const getDashboardSummary = asyncHandler(async (req, res) => {
-  const dateRanges = getDateRanges();
+  const tenantId = req.user?.tenantId || 'default';
   const today = new Date();
+  const ranges = getDateRanges();
 
-  // Revenue calculations
-  const revenueThisMonth = await Payment.aggregate([
-    {
-      $match: {
-        status: 'COMPLETED',
-        paymentDate: dateRanges.currentMonth,
-        isDeleted: false
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$netAmount' }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        total: { $round: ['$total', 2] }
-      }
-    }
+  const [revenueThisMonth, revenueThisYear, revenueAllTime] = await Promise.all([
+    Payment.aggregate([
+      {
+        $match: {
+          tenantId,
+          isDeleted: false,
+          status: 'Completed',
+          paymentDate: ranges.month
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$netAmount' } } }
+    ]),
+    Payment.aggregate([
+      {
+        $match: {
+          tenantId,
+          isDeleted: false,
+          status: 'Completed',
+          paymentDate: ranges.year
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$netAmount' } } }
+    ]),
+    Payment.aggregate([
+      {
+        $match: {
+          tenantId,
+          isDeleted: false,
+          status: 'Completed'
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$netAmount' } } }
+    ])
   ]);
 
-  const revenueThisYear = await Payment.aggregate([
-    {
-      $match: {
-        status: 'COMPLETED',
-        paymentDate: dateRanges.currentYear,
-        isDeleted: false
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$netAmount' }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        total: { $round: ['$total', 2] }
-      }
-    }
-  ]);
-
-  const revenueAllTime = await Payment.aggregate([
-    {
-      $match: {
-        status: 'COMPLETED',
-        isDeleted: false
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$netAmount' }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        total: { $round: ['$total', 2] }
-      }
-    }
-  ]);
-
-  // Pending payments amount
   const pendingInvoices = await Invoice.aggregate([
     {
       $match: {
-        status: { $in: ['SENT', 'DRAFT'] },
-        isDeleted: false
+        tenantId,
+        isDeleted: false,
+        paymentStatus: { $in: ['Unpaid', 'Partially Paid'] },
+        dueDate: { $gte: today }
+      }
+    },
+    {
+      $project: {
+        outstanding: { $subtract: ['$totalAmount', '$paidAmount'] }
       }
     },
     {
       $group: {
         _id: null,
-        total: { $sum: '$total' },
+        total: { $sum: '$outstanding' },
         count: { $sum: 1 }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        total: { $round: ['$total', 2] },
-        count: 1
       }
     }
   ]);
 
-  // Overdue invoices
   const overdueInvoices = await Invoice.aggregate([
     {
       $match: {
-        status: { $in: ['SENT', 'OVERDUE'] },
-        dueDate: { $lt: today },
-        isDeleted: false
+        tenantId,
+        isDeleted: false,
+        paymentStatus: { $ne: 'Paid' },
+        dueDate: { $lt: today }
+      }
+    },
+    {
+      $project: {
+        outstanding: { $subtract: ['$totalAmount', '$paidAmount'] }
       }
     },
     {
       $group: {
         _id: null,
-        total: { $sum: '$total' },
+        total: { $sum: '$outstanding' },
         count: { $sum: 1 }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        total: { $round: ['$total', 2] },
-        count: 1
       }
     }
   ]);
 
-  // Total clients
   const totalClients = await User.countDocuments({
+    tenantId,
     role: 'CLIENT',
     isActive: true
   });
 
-  // Average invoice value
   const averageInvoiceValue = await Invoice.aggregate([
     {
       $match: {
+        tenantId,
         isDeleted: false
       }
     },
     {
       $group: {
         _id: null,
-        average: { $avg: '$total' }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        average: { $round: ['$average', 2] }
+        average: { $avg: '$totalAmount' }
       }
     }
   ]);
@@ -169,166 +128,172 @@ const getDashboardSummary = asyncHandler(async (req, res) => {
     success: true,
     data: {
       revenue: {
-        thisMonth: revenueThisMonth[0]?.total || 0,
-        thisYear: revenueThisYear[0]?.total || 0,
-        allTime: revenueAllTime[0]?.total || 0
+        thisMonth: Number((revenueThisMonth[0]?.total || 0).toFixed(2)),
+        thisYear: Number((revenueThisYear[0]?.total || 0).toFixed(2)),
+        allTime: Number((revenueAllTime[0]?.total || 0).toFixed(2))
       },
       pendingPayments: {
-        amount: pendingInvoices[0]?.total || 0,
+        amount: Number((pendingInvoices[0]?.total || 0).toFixed(2)),
         count: pendingInvoices[0]?.count || 0
       },
       overdueInvoices: {
         count: overdueInvoices[0]?.count || 0,
-        amount: overdueInvoices[0]?.total || 0
+        amount: Number((overdueInvoices[0]?.total || 0).toFixed(2))
       },
-      totalClients: totalClients || 0,
-      averageInvoiceValue: averageInvoiceValue[0]?.average || 0
+      totalClients,
+      averageInvoiceValue: Number((averageInvoiceValue[0]?.average || 0).toFixed(2))
     }
   });
 });
 
-// GET /dashboard/revenue-chart
 const getRevenueChart = asyncHandler(async (req, res) => {
+  const tenantId = req.user?.tenantId || 'default';
   const { period = 'monthly', year = new Date().getFullYear() } = req.query;
-  const dateRanges = getDateRanges();
 
-  let groupBy;
-  let dateFormat;
+  const yearNum = parseInt(year, 10);
+  const ranges = getDateRanges(yearNum);
 
-  if (period === 'monthly') {
-    groupBy = { month: { $month: '$paymentDate' }, year: { $year: '$paymentDate' } };
-    dateFormat = '%Y-%m';
-  } else {
-    groupBy = { year: { $year: '$paymentDate' } };
-    dateFormat = '%Y';
-  }
+  const group =
+    period === 'yearly'
+      ? { year: { $year: '$paymentDate' } }
+      : { year: { $year: '$paymentDate' }, month: { $month: '$paymentDate' } };
 
-  const pipeline = [
+  const revenueData = await Payment.aggregate([
     {
       $match: {
-        status: 'COMPLETED',
+        tenantId,
         isDeleted: false,
-        paymentDate: dateRanges.currentYear
+        status: 'Completed',
+        paymentDate: ranges.year
       }
     },
     {
       $group: {
-        _id: groupBy,
+        _id: group,
         revenue: { $sum: '$netAmount' },
         count: { $sum: 1 }
       }
     },
     {
       $project: {
-        period: {
-          $cond: {
-            if: { $eq: [period, 'monthly'] },
-            then: { $concat: [{ $toString: '$_id.year' }, '-', { $toString: '$_id.month' }] },
-            else: { $toString: '$_id.year' }
-          }
-        },
+        _id: 0,
+        period:
+          period === 'yearly'
+            ? { $toString: '$_id.year' }
+            : {
+                $concat: [
+                  { $toString: '$_id.year' },
+                  '-',
+                  {
+                    $cond: [
+                      { $lt: ['$_id.month', 10] },
+                      { $concat: ['0', { $toString: '$_id.month' }] },
+                      { $toString: '$_id.month' }
+                    ]
+                  }
+                ]
+              },
         revenue: { $round: ['$revenue', 2] },
-        count: 1,
-        _id: 0
+        count: 1
       }
     },
     { $sort: { period: 1 } }
-  ];
-
-  const revenueData = await Payment.aggregate(pipeline);
+  ]);
 
   res.json({
     success: true,
     data: {
       period,
-      year: parseInt(year),
+      year: yearNum,
       revenueData
     }
   });
 });
 
-// GET /dashboard/pending-invoices
 const getPendingInvoices = asyncHandler(async (req, res) => {
+  const tenantId = req.user?.tenantId || 'default';
   const { page = 1, limit = 10 } = req.query;
-  const skip = (page - 1) * limit;
-
-  const pendingInvoices = await Invoice.find({
-    status: { $in: ['SENT', 'DRAFT'] },
-    isDeleted: false
-  })
-    .populate('clientId', 'firstName lastName email companyName')
-    .populate('createdBy', 'firstName lastName')
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(parseInt(limit));
-
-  const total = await Invoice.countDocuments({
-    status: { $in: ['SENT', 'DRAFT'] },
-    isDeleted: false
-  });
-
-  res.json({
-    success: true,
-    data: {
-      invoices: pendingInvoices,
-      pagination: {
-        current: parseInt(page),
-        pages: Math.ceil(total / limit),
-        total,
-        limit: parseInt(limit)
-      }
-    }
-  });
-});
-
-// GET /dashboard/overdue-invoices
-const getOverdueInvoices = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
-  const skip = (page - 1) * limit;
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
   const today = new Date();
 
-  const overdueInvoices = await Invoice.find({
-    status: { $in: ['SENT', 'OVERDUE'] },
-    dueDate: { $lt: today },
-    isDeleted: false
-  })
-    .populate('clientId', 'firstName lastName email companyName')
-    .populate('createdBy', 'firstName lastName')
-    .sort({ dueDate: 1 })
-    .skip(skip)
-    .limit(parseInt(limit));
+  const query = {
+    tenantId,
+    isDeleted: false,
+    paymentStatus: { $in: ['Unpaid', 'Partially Paid'] },
+    dueDate: { $gte: today }
+  };
 
-  const total = await Invoice.countDocuments({
-    status: { $in: ['SENT', 'OVERDUE'] },
-    dueDate: { $lt: today },
-    isDeleted: false
-  });
+  const [invoices, total] = await Promise.all([
+    Invoice.find(query)
+      .populate('clientId', 'firstName lastName email companyName')
+      .sort({ dueDate: 1 })
+      .skip(skip)
+      .limit(limitNum),
+    Invoice.countDocuments(query)
+  ]);
 
   res.json({
     success: true,
     data: {
-      invoices: overdueInvoices,
+      invoices,
       pagination: {
-        current: parseInt(page),
-        pages: Math.ceil(total / limit),
+        current: pageNum,
+        pages: Math.ceil(total / limitNum),
         total,
-        limit: parseInt(limit)
+        limit: limitNum
       }
     }
   });
 });
 
-// GET /dashboard/recent-invoices
+const getOverdueInvoices = asyncHandler(async (req, res) => {
+  const tenantId = req.user?.tenantId || 'default';
+  const { page = 1, limit = 10 } = req.query;
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
+  const today = new Date();
+
+  const query = {
+    tenantId,
+    isDeleted: false,
+    paymentStatus: { $ne: 'Paid' },
+    dueDate: { $lt: today }
+  };
+
+  const [invoices, total] = await Promise.all([
+    Invoice.find(query)
+      .populate('clientId', 'firstName lastName email companyName')
+      .sort({ dueDate: 1 })
+      .skip(skip)
+      .limit(limitNum),
+    Invoice.countDocuments(query)
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      invoices,
+      pagination: {
+        current: pageNum,
+        pages: Math.ceil(total / limitNum),
+        total,
+        limit: limitNum
+      }
+    }
+  });
+});
+
 const getRecentInvoices = asyncHandler(async (req, res) => {
+  const tenantId = req.user?.tenantId || 'default';
   const { limit = 10 } = req.query;
 
-  const recentInvoices = await Invoice.find({
-    isDeleted: false
-  })
+  const recentInvoices = await Invoice.find({ tenantId, isDeleted: false })
     .populate('clientId', 'firstName lastName email companyName')
-    .populate('createdBy', 'firstName lastName')
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit));
+    .limit(parseInt(limit, 10));
 
   res.json({
     success: true,
@@ -338,26 +303,25 @@ const getRecentInvoices = asyncHandler(async (req, res) => {
   });
 });
 
-// GET /dashboard/top-clients
 const getTopClients = asyncHandler(async (req, res) => {
+  const tenantId = req.user?.tenantId || 'default';
   const { period = 'all', limit = 10 } = req.query;
-  const dateRanges = getDateRanges();
+  const now = new Date();
 
-  let dateFilter = {};
+  const match = {
+    tenantId,
+    isDeleted: false,
+    status: 'Completed'
+  };
+
   if (period === 'month') {
-    dateFilter = { paymentDate: dateRanges.currentMonth };
+    match.paymentDate = { $gte: new Date(now.getFullYear(), now.getMonth(), 1), $lte: now };
   } else if (period === 'year') {
-    dateFilter = { paymentDate: dateRanges.currentYear };
+    match.paymentDate = { $gte: new Date(now.getFullYear(), 0, 1), $lte: now };
   }
 
   const topClients = await Payment.aggregate([
-    {
-      $match: {
-        status: 'COMPLETED',
-        isDeleted: false,
-        ...dateFilter
-      }
-    },
+    { $match: match },
     {
       $group: {
         _id: '$clientId',
@@ -365,6 +329,8 @@ const getTopClients = asyncHandler(async (req, res) => {
         paymentCount: { $sum: 1 }
       }
     },
+    { $sort: { totalRevenue: -1 } },
+    { $limit: parseInt(limit, 10) },
     {
       $lookup: {
         from: 'users',
@@ -373,22 +339,24 @@ const getTopClients = asyncHandler(async (req, res) => {
         as: 'client'
       }
     },
-    {
-      $unwind: '$client'
-    },
+    { $unwind: { path: '$client', preserveNullAndEmptyArrays: true } },
     {
       $project: {
+        _id: 0,
         clientId: '$_id',
-        clientName: { $concat: ['$client.firstName', ' ', '$client.lastName'] },
+        clientName: {
+          $cond: [
+            { $ifNull: ['$client', false] },
+            { $concat: ['$client.firstName', ' ', '$client.lastName'] },
+            'Unknown'
+          ]
+        },
         companyName: '$client.companyName',
         email: '$client.email',
         totalRevenue: { $round: ['$totalRevenue', 2] },
-        paymentCount: 1,
-        _id: 0
+        paymentCount: 1
       }
-    },
-    { $sort: { totalRevenue: -1 } },
-    { $limit: parseInt(limit) }
+    }
   ]);
 
   res.json({

@@ -52,15 +52,20 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
   // Create pending payment record
   const payment = await Payment.create({
     invoiceId: invoice._id,
+    clientId: invoice.clientId?._id,
     amount: amountToPay,
+    currency: invoice.currency,
     method: 'Stripe',
     status: 'Pending',
     transactionId: paymentIntent.id,
+    fees: 0,
+    netAmount: amountToPay,
     metadata: {
       paymentIntentId: paymentIntent.id,
       clientSecret: paymentIntent.client_secret
     },
-    processedBy: req.user._id
+    processedBy: req.user._id,
+    tenantId: invoice.tenantId
   });
 
   res.status(201).json({

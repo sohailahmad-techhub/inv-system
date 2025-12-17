@@ -3,7 +3,7 @@ const { body, query, param } = require('express-validator');
 // Validation rules for creating an invoice
 const createInvoiceValidation = [
   body('invoiceNumber')
-    .notEmpty().withMessage('Invoice number is required')
+    .optional()
     .trim()
     .isLength({ min: 1, max: 50 }).withMessage('Invoice number must be between 1 and 50 characters'),
   body('clientId')
@@ -28,10 +28,10 @@ const createInvoiceValidation = [
     .notEmpty().withMessage('Item unit price is required')
     .isFloat({ min: 0 }).withMessage('Unit price cannot be negative'),
   body('items.*.amount')
-    .notEmpty().withMessage('Item amount is required')
+    .optional()
     .isFloat({ min: 0 }).withMessage('Amount cannot be negative'),
   body('subtotal')
-    .notEmpty().withMessage('Subtotal is required')
+    .optional()
     .isFloat({ min: 0 }).withMessage('Subtotal cannot be negative'),
   body('tax')
     .optional()
@@ -43,7 +43,7 @@ const createInvoiceValidation = [
     .optional()
     .isFloat({ min: 0 }).withMessage('Discount cannot be negative'),
   body('totalAmount')
-    .notEmpty().withMessage('Total amount is required')
+    .optional()
     .isFloat({ min: 0 }).withMessage('Total amount cannot be negative'),
   body('notes')
     .optional()

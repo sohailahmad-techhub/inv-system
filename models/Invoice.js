@@ -16,6 +16,10 @@ const invoiceItemSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  amount: {
+    type: Number,
+    min: 0
+  },
   total: {
     type: Number,
     required: true,
@@ -56,6 +60,30 @@ const invoiceSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  tax: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  discount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalAmount: {
+    type: Number,
+    min: 0
+  },
+  paidAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['Unpaid', 'Paid', 'Partially Paid', 'Overdue'],
+    default: 'Unpaid'
+  },
   total: {
     type: Number,
     required: true,
@@ -83,6 +111,10 @@ const invoiceSchema = new mongoose.Schema({
     type: Date
   },
   notes: {
+    type: String,
+    trim: true
+  },
+  terms: {
     type: String,
     trim: true
   },
@@ -164,6 +196,10 @@ const invoiceSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
   // PDF and metadata
   pdfUrl: String,
   pdfGenerated: { type: Boolean, default: false },
@@ -195,28 +231,73 @@ invoiceSchema.virtual('daysOverdue').get(function() {
 
 // Virtual for total paid
 invoiceSchema.virtual('totalPaid').get(function() {
-  return this.payments.reduce((total, payment) => total + payment.amount, 0);
+  if (typeof this.paidAmount === 'number') {
+    return this.paidAmount;
+  }
+
+  return this.payments.reduce((total, payment) => total + (payment.amount || 0), 0);
 });
 
 // Virtual for remaining balance
 invoiceSchema.virtual('remainingBalance').get(function() {
-  return this.total - this.totalPaid;
+  const invoiceTotal = typeof this.totalAmount === 'number' ? this.totalAmount : this.total;
+  return Math.max(0, invoiceTotal - this.totalPaid);
 });
 
-// Pre-save middleware to calculate totals
+// Pre-save middleware to calculate totals and payment status
 invoiceSchema.pre('save', function(next) {
-  // Calculate subtotal
-  this.subtotal = this.items.reduce((sum, item) => sum + item.total, 0);
-  
-  // Calculate tax
-  this.taxAmount = this.subtotal * (this.taxRate / 100);
-  
-  // Calculate total
-  this.total = this.subtotal + this.taxAmount;
-  
-  // Update QR code data with payment URL
+  this.items = (this.items || []).map((item) => {
+    const qty = typeof item.quantity === 'number' ? item.quantity : 0;
+    const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : 0;
+    const lineAmount =
+      typeof item.amount === 'number'
+        ? item.amount
+        : typeof item.total === 'number'
+          ? item.total
+          : qty * unitPrice;
+
+    item.amount = lineAmount;
+    item.total = lineAmount;
+    return item;
+  });
+
+  this.subtotal = this.items.reduce((sum, item) => sum + (item.total || 0), 0);
+
+  const computedTax = this.subtotal * (this.taxRate / 100);
+  this.taxAmount = typeof this.tax === 'number' ? this.tax : computedTax;
+  this.tax = this.taxAmount;
+
+  const discount = typeof this.discount === 'number' ? this.discount : 0;
+  this.totalAmount = this.subtotal + this.taxAmount - discount;
+  this.total = this.totalAmount;
+
+  const totalAmount = typeof this.totalAmount === 'number' ? this.totalAmount : this.total;
+  const paidAmount = typeof this.paidAmount === 'number' ? this.paidAmount : 0;
+
+  let paymentStatus = 'Unpaid';
+  if (paidAmount >= totalAmount && totalAmount > 0) {
+    paymentStatus = 'Paid';
+  } else if (paidAmount > 0) {
+    paymentStatus = 'Partially Paid';
+  }
+
+  if (paymentStatus !== 'Paid' && this.dueDate && new Date() > this.dueDate) {
+    paymentStatus = 'Overdue';
+  }
+
+  this.paymentStatus = paymentStatus;
+
+  if (paymentStatus === 'Paid') {
+    this.status = 'paid';
+    if (!this.paidDate) {
+      this.paidDate = new Date();
+    }
+  } else if (paymentStatus === 'Overdue' && this.status !== 'paid') {
+    this.status = 'overdue';
+  }
+
   this.qrCodeData = `${process.env.BASE_URL || 'http://localhost:3000'}/pay/${this._id}`;
-  
+
   next();
 });
 

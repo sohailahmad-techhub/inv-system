@@ -1,5 +1,8 @@
 // Role-based authorization middleware
 const authorize = (...allowedRoles) => {
+  // Backwards compatible: allow authorize(['ADMIN', 'ACCOUNTANT']) and authorize('ADMIN', 'ACCOUNTANT')
+  const roles = allowedRoles.flat();
+
   return (req, res, next) => {
     try {
       if (!req.user) {
@@ -10,7 +13,7 @@ const authorize = (...allowedRoles) => {
       }
 
       // Check if user's role is in the allowed roles
-      if (!allowedRoles.includes(req.user.role)) {
+      if (!roles.includes(req.user.role)) {
         return res.status(403).json({
           success: false,
           message: 'Insufficient permissions to access this resource'
