@@ -7,19 +7,8 @@ datasource db {
   url      = "file:./dev.db"
 }
 
-enum InvoiceStatus {
-  DRAFT
-  SENT
-  PAID
-  OVERDUE
-  CANCELLED
-}
-
-enum TaxType {
-  VAT
-  GST
-  CUSTOM
-}
+// enum InvoiceStatus removed for SQLite compatibility
+// enum TaxType removed for SQLite compatibility
 
 model Client {
   id          String    @id @default(cuid())
@@ -54,7 +43,7 @@ model Invoice {
   tax           Decimal
   total         Decimal
 
-  status        InvoiceStatus @default(DRAFT)
+  status        String        @default("DRAFT") // Was InvoiceStatus
 
   issuedDate    DateTime
   dueDate       DateTime?
@@ -104,7 +93,7 @@ model InvoiceTemplate {
   id        String   @id @default(cuid())
   name      String
   layout    String
-  fields    Json
+  fields    String   // Was Json
   css       String?
 
   createdAt DateTime @default(now())
@@ -119,7 +108,7 @@ model Tax {
   id        String   @id @default(cuid())
   name      String
   rate      Decimal
-  type      TaxType
+  type      String   // Was TaxType
   country   String?
 
   createdAt DateTime @default(now())

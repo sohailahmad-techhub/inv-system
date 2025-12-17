@@ -28,7 +28,9 @@
     "lib/**/*.ts",
     "lib/**/*.tsx",
     "types/**/*.ts",
-    "types/**/*.tsx"
+    "types/**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx"
   ],
   "exclude": ["node_modules", "api", "api/**"]
 }
