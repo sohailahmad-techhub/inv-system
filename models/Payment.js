@@ -1,104 +1,122 @@
 const mongoose = require('mongoose');
 
-const paymentSchema = new mongoose.Schema({
-  paymentId: {
-    type: String,
-    unique: true,
-    required: true
+const paymentSchema = new mongoose.Schema(
+  {
+    paymentNumber: {
+      type: String,
+      unique: true,
+      index: true
+    },
+    invoiceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Invoice',
+      required: true,
+      index: true
+    },
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      index: true
+    },
+    amount: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    currency: {
+      type: String,
+      default: 'USD',
+      uppercase: true
+    },
+    method: {
+      type: String,
+      enum: ['Cash', 'BankTransfer', 'Card', 'Stripe', 'PayPal'],
+      required: true
+    },
+    status: {
+      type: String,
+      enum: ['Pending', 'Completed', 'Failed', 'Refunded'],
+      default: 'Pending',
+      index: true
+    },
+    paymentDate: {
+      type: Date,
+      default: Date.now,
+      index: true
+    },
+    reference: {
+      type: String,
+      trim: true
+    },
+    transactionId: {
+      type: String,
+      trim: true,
+      index: true
+    },
+    fees: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    netAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed
+    },
+    refundId: {
+      type: String,
+      trim: true
+    },
+    refundedAmount: {
+      type: Number,
+      min: 0
+    },
+    refundedAt: {
+      type: Date
+    },
+    notes: {
+      type: String,
+      trim: true
+    },
+    processedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false
+    },
+    tenantId: {
+      type: String,
+      default: 'default',
+      index: true
+    }
   },
-  invoiceId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Invoice',
-    required: true
-  },
-  clientId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  amount: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  currency: {
-    type: String,
-    default: 'USD',
-    uppercase: true
-  },
-  method: {
-    type: String,
-    enum: ['credit_card', 'bank_transfer', 'cash', 'check', 'paypal', 'stripe', 'other'],
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'completed', 'failed', 'refunded', 'cancelled'],
-    default: 'pending'
-  },
-  paymentDate: {
-    type: Date,
-    default: Date.now
-  },
-  reference: {
-    type: String,
-    trim: true
-  },
-  notes: {
-    type: String,
-    trim: true
-  },
-  // External payment processor data
-  externalData: {
-    processor: String, // 'stripe', 'paypal', etc.
-    transactionId: String,
-    fee: Number,
-    netAmount: Number,
-    rawResponse: mongoose.Schema.Types.Mixed
-  },
-  // Receipt data
-  receipt: {
-    receiptNumber: String,
-    receiptUrl: String,
-    generatedAt: { type: Date, default: Date.now }
-  },
-  // Refund information
-  refunds: [{
-    amount: Number,
-    reason: String,
-    date: Date,
-    refundId: String
-  }],
-  // Integration tracking
-  syncStatus: {
-    quickbooks: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' },
-    xero: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' },
-    freshbooks: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' }
-  },
-  // Multitenancy
-  tenantId: {
-    type: String,
-    required: true
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
   }
-}, {
-  timestamps: true
+);
+
+paymentSchema.virtual('date').get(function() {
+  return this.paymentDate;
 });
 
-// Indexes
-paymentSchema.index({ invoiceId: 1 });
-paymentSchema.index({ clientId: 1 });
-paymentSchema.index({ paymentId: 1 });
-paymentSchema.index({ paymentDate: -1 });
-paymentSchema.index({ tenantId: 1 });
-paymentSchema.index({ status: 1 });
-
-// Pre-save middleware to generate payment ID
-paymentSchema.pre('save', function(next) {
-  if (!this.paymentId) {
+paymentSchema.pre('validate', function(next) {
+  if (!this.paymentNumber) {
     const timestamp = Date.now().toString();
     const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-    this.paymentId = `PAY-${timestamp}-${random}`;
+    this.paymentNumber = `PAY-${timestamp}-${random}`;
   }
+
+  if (typeof this.netAmount !== 'number' || this.netAmount === 0) {
+    this.netAmount = Math.max(0, (this.amount || 0) - (this.fees || 0));
+  }
+
   next();
 });
 

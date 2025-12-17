@@ -8,13 +8,14 @@ const {
   getRecentInvoices,
   getTopClients
 } = require('../controllers/dashboardController');
+const { auth } = require('../middleware/auth');
 const { authorize } = require('../middleware/authorize');
 const { cacheEndpoint } = require('../utils/cache');
 
 const router = express.Router();
 
-// Apply authentication to all dashboard routes
-router.use(authorize(['ADMIN', 'ACCOUNTANT']));
+router.use(auth);
+router.use(authorize('ADMIN', 'ACCOUNTANT'));
 
 // Dashboard summary (cached for 15 minutes)
 router.get('/summary', cacheEndpoint('summary', 15), getDashboardSummary);

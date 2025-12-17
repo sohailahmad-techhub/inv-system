@@ -79,15 +79,20 @@ const createOrder = asyncHandler(async (req, res) => {
     // Create pending payment record
     const payment = await Payment.create({
       invoiceId: invoice._id,
+      clientId: invoice.clientId?._id,
       amount: amountToPay,
+      currency: invoice.currency,
       method: 'PayPal',
       status: 'Pending',
       transactionId: order.result.id,
+      fees: 0,
+      netAmount: amountToPay,
       metadata: {
         orderId: order.result.id,
         status: order.result.status
       },
-      processedBy: req.user._id
+      processedBy: req.user._id,
+      tenantId: invoice.tenantId
     });
 
     res.status(201).json({
