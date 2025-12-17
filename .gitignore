@@ -23,16 +23,13 @@ pids/
 
 # Coverage directory used by tools like istanbul
 coverage/
-*.lcov
-
-# nyc test coverage
-.nyc_output
+.nyc_output/
 
 # Grunt intermediate storage
-.grunt
+.grunt/
 
 # Bower dependency directory
-bower_components
+bower_components/
 
 # node-waf configuration
 .lock-wscript
@@ -74,28 +71,26 @@ typings/
 .cache
 .parcel-cache
 
-# next.js build output
+# Next.js build output
 .next
 
-# nuxt.js build output
+# Nuxt.js build / generate output
 .nuxt
+dist
 
-# vuepress build output
-.vuepress/dist
+# Gatsby files
+.cache/
+public
 
-# Serverless directories
-.serverless/
+# Storybook build outputs
+.out
+.storybook-out
 
-# FuseBox cache
-.fusebox/
+# Temporary folders
+tmp/
+temp/
 
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
-
-# IDE files
+# Editor directories and files
 .vscode/
 .idea/
 *.swp
@@ -111,37 +106,22 @@ typings/
 ehthumbs.db
 Thumbs.db
 
-# Temporary files
-tmp/
-temp/
-
-# Build files
-dist/
-build/
-
-# Database files
+# Database
+*.db
 *.sqlite
 *.sqlite3
-*.db
 
-# Redis dumps
-dump.rdb
+# Testing
+test-results/
+coverage/
 
-# PM2 files
-ecosystem.config.js
+# Production builds
+build/
+dist/
 
-# SSL certificates
-*.pem
-*.key
-*.crt
+# PM2
+.pm2/
 
-# Backup files
-*.backup
-*.bak
-
-# Docker files (if not needed in repo)
-Dockerfile*
-docker-compose*.yml
-
-# Test files (if you want to exclude test data)
-test-data/
+# IDE files
+*.sublime-project
+*.sublime-workspace
