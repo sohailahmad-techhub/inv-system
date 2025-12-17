@@ -3,65 +3,78 @@ import { useRouter } from 'next/router';
 import type { PropsWithChildren } from 'react';
 import { useEffect, useState } from 'react';
 
-import { clearAccessToken, getAccessToken } from '@/lib/auth';
+import { useAuth } from '@/context/AuthContext';
+import { Navbar } from './Navbar';
+import { Sidebar } from './Sidebar';
 
 export function Layout({ children }: PropsWithChildren) {
+  const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
-  const [hasToken, setHasToken] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
+  // Load dark mode preference
   useEffect(() => {
-    setHasToken(Boolean(getAccessToken()));
-
-    const onStorage = () => setHasToken(Boolean(getAccessToken()));
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    const isDark = localStorage.getItem('theme') === 'dark';
+    setIsDarkMode(isDark);
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    }
   }, []);
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <Link href="/" className="text-lg font-semibold">
-            Invoice System
-          </Link>
-          <nav className="flex flex-wrap items-center gap-4 text-sm">
-            <Link href="/" className="hover:underline">
-              Home
-            </Link>
-            <Link href="/invoices" className="hover:underline">
-              Invoices
-            </Link>
-            <Link href="/clients" className="hover:underline">
-              Clients
-            </Link>
-            <Link href="/recurring-invoices" className="hover:underline">
-              Recurring
-            </Link>
-            {hasToken ? (
-              <button
-                type="button"
-                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
-                onClick={() => {
-                  clearAccessToken();
-                  setHasToken(false);
-                  router.push('/login');
-                }}
-              >
-                Logout
-              </button>
-            ) : (
-              <Link
-                href="/login"
-                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
-              >
-                Login
-              </Link>
-            )}
-          </nav>
-        </div>
-      </header>
+  const toggleDarkMode = () => {
+    const newIsDark = !isDarkMode;
+    setIsDarkMode(newIsDark);
+    localStorage.setItem('theme', newIsDark ? 'dark' : 'light');
+    if (newIsDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
 
-      <main className="mx-auto w-full max-w-5xl px-4 py-10">{children}</main>
+  // Hide layout for auth pages
+  const isAuthPage = router.pathname.startsWith('/auth');
+  if (isAuthPage) {
+    return (
+      <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
+        <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white min-h-screen transition-colors">
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
+        <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white min-h-screen flex items-center justify-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 dark:border-gray-700 border-t-blue-600" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
+        <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white min-h-screen">
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
+      <div className="flex h-screen flex-col bg-white dark:bg-gray-900">
+        <Navbar isDarkMode={isDarkMode} onToggleDarkMode={toggleDarkMode} />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar />
+          <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white p-4 md:p-6 transition-colors">
+            {children}
+          </main>
+        </div>
+      </div>
     </div>
   );
 }

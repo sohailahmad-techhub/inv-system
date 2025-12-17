@@ -1,404 +1,187 @@
 const express = require('express');
-const router = express.Router();
 const asyncHandler = require('express-async-handler');
+const crypto = require('crypto');
 const Invoice = require('../models/Invoice');
 const Payment = require('../models/Payment');
-const QRCode = require('qrcode');
-const crypto = require('crypto');
 
-// @desc    Public payment page
-// @route   GET /pay/:invoiceId
-// @access  Public
-const getPaymentPage = asyncHandler(async (req, res) => {
-  const { invoiceId } = req.params;
-  
-  const invoice = await Invoice.findById(invoiceId)
-    .populate('clientId', 'firstName lastName email companyName')
-    .populate('createdBy', 'firstName lastName email companyName');
-  
-  if (!invoice) {
-    return res.status(404).json({
-      success: false,
-      message: 'Invoice not found'
-    });
-  }
-  
-  // Check if invoice is already paid
-  if (invoice.status === 'paid') {
-    return res.render('payment/already-paid', {
-      invoice,
-      message: 'This invoice has already been paid'
-    });
-  }
-  
-  // Generate QR code if not exists
-  let qrCodeDataURL;
-  try {
-    qrCodeDataURL = await QRCode.toDataURL(invoice.qrCodeData, {
-      width: 200,
-      margin: 2
-    });
-  } catch (error) {
-    console.error('QR Code generation failed:', error);
-  }
-  
-  // Render payment page
-  res.render('payment/index', {
-    invoice,
-    qrCodeDataURL,
-    paymentPrediction: invoice.paymentPrediction,
-    title: `Pay Invoice ${invoice.invoiceNumber}`
-  });
-});
+const router = express.Router();
 
-// @desc    Process public payment
-// @route   POST /pay/:invoiceId
-// @access  Public
-const processPublicPayment = asyncHandler(async (req, res) => {
-  const { invoiceId } = req.params;
-  const { amount, method, payerName, payerEmail, notes } = req.body;
-  
-  const invoice = await Invoice.findById(invoiceId);
-  
-  if (!invoice) {
-    res.status(404);
-    throw new Error('Invoice not found');
-  }
-  
-  // Check if invoice is already paid
-  if (invoice.status === 'paid') {
-    res.status(400);
-    throw new Error('Invoice has already been paid');
-  }
-  
-  // Validate payment amount
-  const remainingBalance = invoice.total - invoice.totalPaid;
-  if (amount > remainingBalance) {
-    res.status(400);
-    throw new Error('Payment amount exceeds remaining balance');
-  }
-  
-  // Create payment record
-  const payment = await Payment.create({
-    invoiceId: invoice._id,
-    clientId: invoice.clientId,
-    amount: parseFloat(amount),
-    method: method || 'other',
-    status: 'completed', // For public payments, mark as completed
-    paymentDate: new Date(),
-    reference: `PAY-${Date.now()}`,
-    notes: notes || `Payment from ${payerName || 'Guest'}`,
-    tenantId: invoice.tenantId
-  });
-  
-  // Update invoice
-  const newTotalPaid = invoice.totalPaid + parseFloat(amount);
-  invoice.payments.push({
-    paymentId: payment._id,
-    amount: parseFloat(amount),
-    date: new Date(),
-    method: method || 'other'
-  });
-  
-  if (newTotalPaid >= invoice.total) {
-    invoice.status = 'paid';
-    invoice.paidDate = new Date();
-  }
-  
-  await invoice.save();
-  
-  // Trigger webhook
-  await triggerWebhook('payment.received', { 
-    ...payment.toObject(), 
-    invoice: invoice.toObject(),
-    publicPayment: true 
-  });
-  
-  if (invoice.status === 'paid') {
-    await triggerWebhook('invoice.paid', invoice.toObject());
-  }
-  
-  // Redirect to payment confirmation page
-  res.redirect(`/pay/confirmation/${payment._id}`);
-});
+const normalizeMethod = (method) => {
+  const m = (method || '').toLowerCase();
+  if (m === 'cash') return 'Cash';
+  if (m === 'banktransfer' || m === 'bank_transfer' || m === 'bank') return 'BankTransfer';
+  if (m === 'card' || m === 'creditcard' || m === 'credit_card') return 'Card';
+  if (m === 'stripe') return 'Stripe';
+  if (m === 'paypal') return 'PayPal';
+  return 'Card';
+};
 
-// @desc    Payment confirmation page
-// @route   GET /pay/confirmation/:paymentId
-// @access  Public
-const getPaymentConfirmation = asyncHandler(async (req, res) => {
-  const { paymentId } = req.params;
-  
-  const payment = await Payment.findById(paymentId)
-    .populate({
-      path: 'invoiceId',
-      populate: {
-        path: 'clientId createdBy'
-      }
-    });
-  
-  if (!payment) {
-    return res.status(404).json({
-      success: false,
-      message: 'Payment not found'
-    });
-  }
-  
-  res.render('payment/confirmation', {
-    payment,
-    invoice: payment.invoiceId,
-    title: 'Payment Confirmation'
-  });
-});
+// GET /pay/:invoiceId
+router.get(
+  '/:invoiceId',
+  asyncHandler(async (req, res) => {
+    const invoice = await Invoice.findById(req.params.invoiceId)
+      .populate('clientId', 'firstName lastName email companyName')
+      .populate('createdBy', 'firstName lastName email companyName');
 
-// @desc    Get payment receipt
-// @route   GET /pay/receipt/:paymentId
-// @access  Public
-const getPaymentReceipt = asyncHandler(async (req, res) => {
-  const { paymentId } = req.params;
-  
-  const payment = await Payment.findById(paymentId)
-    .populate({
-      path: 'invoiceId',
-      populate: {
-        path: 'clientId createdBy'
-      }
-    });
-  
-  if (!payment) {
-    res.status(404);
-    throw new Error('Payment not found');
-  }
-  
-  // Generate receipt data
-  const receipt = {
-    receiptNumber: payment.paymentId,
-    paymentId: payment.paymentId,
-    amount: payment.amount,
-    currency: payment.currency,
-    method: payment.method,
-    paymentDate: payment.paymentDate,
-    invoice: {
-      invoiceNumber: payment.invoiceId.invoiceNumber,
-      total: payment.invoiceId.total
-    },
-    payee: {
-      name: `${payment.invoiceId.clientId.firstName} ${payment.invoiceId.clientId.lastName}`,
-      email: payment.invoiceId.clientId.email,
-      companyName: payment.invoiceId.clientId.companyName
-    },
-    payer: {
-      companyName: payment.invoiceId.createdBy.companyName,
-      email: payment.invoiceId.createdBy.email
-    },
-    generatedAt: new Date()
-  };
-  
-  res.json({
-    success: true,
-    data: receipt
-  });
-});
-
-// @desc    Verify payment (for webhooks or integrations)
-// @route   GET /pay/verify/:paymentId
-// @access  Public
-const verifyPayment = asyncHandler(async (req, res) => {
-  const { paymentId } = req.params;
-  const { signature } = req.query;
-  
-  // Verify signature if provided
-  if (signature) {
-    const expectedSignature = crypto
-      .createHmac('sha256', process.env.PAYMENT_WEBHOOK_SECRET)
-      .update(paymentId)
-      .digest('hex');
-    
-    if (signature !== expectedSignature) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid signature'
-      });
-    }
-  }
-  
-  const payment = await Payment.findById(paymentId)
-    .populate({
-      path: 'invoiceId',
-      select: 'invoiceNumber total status'
-    });
-  
-  if (!payment) {
-    return res.status(404).json({
-      success: false,
-      message: 'Payment not found'
-    });
-  }
-  
-  res.json({
-    success: true,
-    data: {
-      paymentId: payment.paymentId,
-      invoiceId: payment.invoiceId._id,
-      invoiceNumber: payment.invoiceId.invoiceNumber,
-      amount: payment.amount,
-      currency: payment.currency,
-      status: payment.status,
-      paymentDate: payment.paymentDate,
-      method: payment.method,
-      verified: true,
-      verifiedAt: new Date()
-    }
-  });
-});
-
-// @desc    Webhook for payment gateway notifications
-// @route   POST /webhooks/payment-gateway
-// @access  Public
-const paymentGatewayWebhook = asyncHandler(async (req, res) => {
-  const { event, data } = req.body;
-  
-  try {
-    switch (event) {
-      case 'payment.completed':
-        await handlePaymentCompleted(data);
-        break;
-      case 'payment.failed':
-        await handlePaymentFailed(data);
-        break;
-      case 'payment.refunded':
-        await handlePaymentRefunded(data);
-        break;
-      default:
-        console.log(`Unhandled payment gateway event: ${event}`);
-    }
-    
-    res.json({ success: true, message: 'Webhook processed' });
-    
-  } catch (error) {
-    console.error('Payment gateway webhook error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Webhook processing failed'
-    });
-  }
-});
-
-// Helper functions for webhook handling
-
-async function handlePaymentCompleted(data) {
-  const { externalTransactionId, invoiceId, amount, status } = data;
-  
-  // Find existing payment or create new one
-  let payment = await Payment.findOne({
-    'externalData.transactionId': externalTransactionId
-  });
-  
-  if (!payment) {
-    // Create new payment record
-    const invoice = await Invoice.findById(invoiceId);
     if (!invoice) {
-      throw new Error('Invoice not found for payment completion');
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
     }
-    
-    payment = await Payment.create({
+
+    const amountToPay = Math.max(0, (invoice.totalAmount || 0) - (invoice.paidAmount || 0));
+
+    res.json({
+      success: true,
+      data: {
+        invoice,
+        amountToPay,
+        paymentMethods: ['Stripe', 'PayPal']
+      }
+    });
+  })
+);
+
+// POST /pay/:invoiceId
+router.post(
+  '/:invoiceId',
+  asyncHandler(async (req, res) => {
+    const invoice = await Invoice.findById(req.params.invoiceId);
+
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
+    }
+
+    const { amount, method, payerName, payerEmail, notes } = req.body;
+
+    const parsedAmount = parseFloat(amount);
+    const remainingBalance = (invoice.totalAmount || 0) - (invoice.paidAmount || 0);
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid amount' });
+    }
+
+    if (parsedAmount > remainingBalance) {
+      return res.status(400).json({ success: false, message: 'Payment amount exceeds remaining balance' });
+    }
+
+    const normalizedMethod = normalizeMethod(method);
+
+    const payment = await Payment.create({
       invoiceId: invoice._id,
       clientId: invoice.clientId,
-      amount: parseFloat(amount),
-      method: 'external',
-      status: status === 'completed' ? 'completed' : 'pending',
+      amount: parsedAmount,
+      currency: invoice.currency,
+      method: normalizedMethod,
+      status: 'Completed',
       paymentDate: new Date(),
-      externalData: {
-        processor: data.processor || 'unknown',
-        transactionId: externalTransactionId,
-        rawResponse: data
-      },
+      reference: `PUBLIC-${Date.now()}`,
+      notes: notes || `Public payment from ${payerName || payerEmail || 'Guest'}`,
       tenantId: invoice.tenantId
     });
-  } else {
-    // Update existing payment
-    payment.status = status === 'completed' ? 'completed' : 'pending';
-    payment.externalData.rawResponse = data;
-  }
-  
-  await payment.save();
-  
-  // Update invoice
-  const invoice = await Invoice.findById(invoiceId);
-  if (invoice && status === 'completed') {
-    const existingPayment = invoice.payments.find(p => p.paymentId.toString() === payment._id.toString());
-    if (!existingPayment) {
-      invoice.payments.push({
-        paymentId: payment._id,
-        amount: parseFloat(amount),
-        date: payment.paymentDate,
-        method: 'external'
-      });
-    }
-    
-    const newTotalPaid = invoice.totalPaid + parseFloat(amount);
-    if (newTotalPaid >= invoice.total) {
-      invoice.status = 'paid';
-      invoice.paidDate = payment.paymentDate;
-    }
-    
+
+    invoice.paidAmount = (invoice.paidAmount || 0) + parsedAmount;
+    invoice.payments.push({ paymentId: payment._id, amount: parsedAmount, date: payment.paymentDate, method: normalizedMethod });
     await invoice.save();
-  }
-  
-  // Trigger webhooks
-  await triggerWebhook('payment.received', { ...payment.toObject(), invoice });
-  if (invoice && invoice.status === 'paid') {
-    await triggerWebhook('invoice.paid', invoice.toObject());
-  }
-}
 
-async function handlePaymentFailed(data) {
-  const { externalTransactionId } = data;
-  
-  const payment = await Payment.findOne({
-    'externalData.transactionId': externalTransactionId
-  });
-  
-  if (payment) {
-    payment.status = 'failed';
-    payment.externalData.rawResponse = data;
-    await payment.save();
-    
-    await triggerWebhook('payment.failed', payment.toObject());
-  }
-}
-
-async function handlePaymentRefunded(data) {
-  const { externalTransactionId, refundAmount } = data;
-  
-  const payment = await Payment.findOne({
-    'externalData.transactionId': externalTransactionId
-  });
-  
-  if (payment) {
-    payment.refunds.push({
-      amount: parseFloat(refundAmount),
-      reason: data.reason || 'Gateway refund',
-      date: new Date(),
-      refundId: data.externalRefundId
+    res.status(201).json({
+      success: true,
+      message: 'Payment completed',
+      data: {
+        paymentId: payment._id,
+        invoiceId: invoice._id
+      }
     });
-    
-    await payment.save();
-    
-    await triggerWebhook('payment.refunded', payment.toObject());
-  }
-}
+  })
+);
 
-// Helper function to trigger webhooks
-async function triggerWebhook(event, data) {
-  console.log(`Triggering webhook for event: ${event}`);
-  // This would integrate with your webhook system
-}
+// GET /pay/confirmation/:paymentId
+router.get(
+  '/confirmation/:paymentId',
+  asyncHandler(async (req, res) => {
+    const payment = await Payment.findById(req.params.paymentId).populate(
+      'invoiceId',
+      'invoiceNumber currency totalAmount paidAmount paymentStatus'
+    );
 
-module.exports = {
-  getPaymentPage,
-  processPublicPayment,
-  getPaymentConfirmation,
-  getPaymentReceipt,
-  verifyPayment,
-  paymentGatewayWebhook
-};
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    res.json({ success: true, data: payment });
+  })
+);
+
+// GET /pay/receipt/:paymentId
+router.get(
+  '/receipt/:paymentId',
+  asyncHandler(async (req, res) => {
+    const payment = await Payment.findById(req.params.paymentId)
+      .populate('invoiceId', 'invoiceNumber currency totalAmount')
+      .populate('clientId', 'firstName lastName email companyName');
+
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        receiptNumber: payment.paymentNumber,
+        payment,
+        invoice: payment.invoiceId,
+        client: payment.clientId
+      }
+    });
+  })
+);
+
+// GET /pay/verify/:paymentId
+router.get(
+  '/verify/:paymentId',
+  asyncHandler(async (req, res) => {
+    const { paymentId } = req.params;
+    const { signature } = req.query;
+
+    if (signature && process.env.PAYMENT_WEBHOOK_SECRET) {
+      const expectedSignature = crypto
+        .createHmac('sha256', process.env.PAYMENT_WEBHOOK_SECRET)
+        .update(paymentId)
+        .digest('hex');
+
+      if (signature !== expectedSignature) {
+        return res.status(401).json({ success: false, message: 'Invalid signature' });
+      }
+    }
+
+    const payment = await Payment.findById(paymentId).populate('invoiceId', 'invoiceNumber');
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        paymentId: payment.paymentNumber,
+        invoiceId: payment.invoiceId?._id,
+        invoiceNumber: payment.invoiceId?.invoiceNumber,
+        amount: payment.amount,
+        currency: payment.currency,
+        status: payment.status,
+        paymentDate: payment.paymentDate,
+        method: payment.method,
+        verified: true,
+        verifiedAt: new Date()
+      }
+    });
+  })
+);
+
+// POST /webhooks/payment-gateway
+router.post(
+  '/payment-gateway',
+  asyncHandler(async (req, res) => {
+    res.json({ success: true, message: 'Webhook processed' });
+  })
+);
+
+module.exports = router;

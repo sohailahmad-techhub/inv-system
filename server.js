@@ -10,6 +10,11 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const invoiceRoutes = require('./routes/invoices');
 const paymentRoutes = require('./routes/payments');
+const stripeRoutes = require('./routes/stripe');
+const paypalRoutes = require('./routes/paypal');
+const dashboardRoutes = require('./routes/dashboard');
+const analyticsRoutes = require('./routes/analytics');
+const exportRoutes = require('./routes/export');
 const expenseRoutes = require('./routes/expenses');
 const integrationRoutes = require('./routes/integrations');
 const webhookRoutes = require('./routes/webhooks');
@@ -113,7 +118,6 @@ app.use('/api', generalLimiter);
 
 // Raw body middleware for webhooks (must be before JSON parser)
 app.use('/stripe/webhook', express.raw({ type: 'application/json' }));
-app.use('/paypal/webhook', express.raw({ type: 'application/json' }));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -142,6 +146,11 @@ app.use('/users', userRoutes);
 app.use('/invoices', invoiceRoutes);
 app.use('/bulk', bulkRoutes); // Bulk operations
 app.use('/payments', paymentRoutes);
+app.use('/stripe', stripeRoutes);
+app.use('/paypal', paypalRoutes);
+app.use('/dashboard', dashboardRoutes);
+app.use('/analytics', analyticsRoutes);
+app.use('/export', exportRoutes);
 app.use('/expenses', expenseRoutes);
 app.use('/integrations', integrationRoutes);
 app.use('/webhooks', webhookRoutes);

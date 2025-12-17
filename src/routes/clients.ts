@@ -1,10 +1,19 @@
 import { Router } from "express";
-import { InvoiceStatus, type Prisma } from "@prisma/client";
+import { type Prisma } from "@prisma/client";
 import { z } from "zod";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { parseBody, parseQuery } from "../lib/validation";
+
+// Define InvoiceStatus locally as it was removed from Prisma Schema for SQLite compatibility
+const InvoiceStatus = {
+  DRAFT: 'DRAFT',
+  SENT: 'SENT',
+  PAID: 'PAID',
+  OVERDUE: 'OVERDUE',
+  CANCELLED: 'CANCELLED',
+} as const;
 
 export const clientsRouter = Router();
 

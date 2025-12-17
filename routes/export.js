@@ -7,12 +7,13 @@ const {
   exportFinancialStatement,
   exportTaxReport
 } = require('../controllers/exportController');
+const { auth } = require('../middleware/auth');
 const { authorize } = require('../middleware/authorize');
 
 const router = express.Router();
 
-// Apply authentication to all export routes
-router.use(authorize(['ADMIN', 'ACCOUNTANT']));
+router.use(auth);
+router.use(authorize('ADMIN', 'ACCOUNTANT'));
 
 // Export invoices as PDF
 router.post('/invoices-pdf',
