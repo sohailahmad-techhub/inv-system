@@ -8,6 +8,10 @@ const connectDB = require('./config/database');
 // Import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
+const paymentRoutes = require('./routes/payments');
+const invoiceRoutes = require('./routes/invoices');
+const stripeRoutes = require('./routes/stripe');
+const paypalRoutes = require('./routes/paypal');
 
 const app = express();
 
@@ -54,6 +58,10 @@ const generalLimiter = rateLimit({
 // Apply general rate limiting
 app.use('/api', generalLimiter);
 
+// Raw body middleware for webhooks (must be before JSON parser)
+app.use('/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use('/paypal/webhook', express.raw({ type: 'application/json' }));
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -71,6 +79,10 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/auth', authLimiter, authRoutes);
 app.use('/users', userRoutes);
+app.use('/payments', paymentRoutes);
+app.use('/invoices', invoiceRoutes);
+app.use('/stripe', stripeRoutes);
+app.use('/paypal', paypalRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

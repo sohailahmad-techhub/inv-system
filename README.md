@@ -1,6 +1,6 @@
-# JWT Authentication & Role-Based Access Control System
+# JWT Authentication & Role-Based Access Control System with Payment Management
 
-A complete JWT-based authentication system with role-based access control built with Node.js, Express, and MongoDB.
+A complete JWT-based authentication system with role-based access control and comprehensive payment management built with Node.js, Express, MongoDB, Stripe, and PayPal.
 
 ## Features
 
@@ -22,6 +22,36 @@ A complete JWT-based authentication system with role-based access control built 
 - ✅ **PUT /users/:id/role** - Change user role (Admin only)
 - ✅ **GET /users/profile** - Get own profile
 - ✅ **PUT /users/profile** - Update own profile
+
+### Invoice Management APIs
+- ✅ **POST /invoices** - Create invoice (Admin/Accountant)
+- ✅ **GET /invoices** - List invoices with filters
+- ✅ **GET /invoices/:id** - Get invoice details
+- ✅ **PUT /invoices/:id** - Update invoice (Admin/Accountant)
+- ✅ **DELETE /invoices/:id** - Delete invoice (Admin)
+- ✅ **GET /invoices/:id/payment-status** - Get detailed payment status
+- ✅ **POST /invoices/mark-overdue** - Mark overdue invoices
+
+### Payment Management APIs
+- ✅ **POST /payments** - Record manual payment (Admin/Accountant)
+- ✅ **GET /payments** - List payments with filters (Admin/Accountant)
+- ✅ **GET /payments/:id** - Get payment details
+- ✅ **PUT /payments/:id** - Update payment status (Admin/Accountant)
+- ✅ **DELETE /payments/:id** - Delete pending payment (Admin)
+- ✅ **POST /payments/:id/refund** - Issue refund (Admin/Accountant)
+- ✅ **GET /payments/reconcile** - Payment reconciliation report
+
+### Stripe Integration
+- ✅ **POST /stripe/checkout** - Create Stripe payment session
+- ✅ **POST /stripe/webhook** - Handle Stripe webhook events
+- ✅ **GET /stripe/payment/:id** - Check Stripe payment status
+- ✅ **POST /stripe/refund/:id** - Process Stripe refund
+
+### PayPal Integration
+- ✅ **POST /paypal/create-order** - Create PayPal order
+- ✅ **POST /paypal/capture-order** - Capture PayPal payment
+- ✅ **POST /paypal/webhook** - Handle PayPal webhook events
+- ✅ **POST /paypal/refund/:id** - Process PayPal refund
 
 ## Database Schema
 
@@ -49,11 +79,85 @@ A complete JWT-based authentication system with role-based access control built 
 }
 ```
 
+### Invoice Model
+```javascript
+{
+  invoiceNumber: String (unique, required),
+  clientId: ObjectId (ref: User, required),
+  issueDate: Date (required),
+  dueDate: Date (required),
+  items: [{
+    description: String (required),
+    quantity: Number (required),
+    unitPrice: Number (required),
+    amount: Number (required)
+  }],
+  subtotal: Number (required),
+  tax: Number,
+  taxRate: Number,
+  discount: Number,
+  totalAmount: Number (required),
+  paidAmount: Number (default: 0),
+  paymentStatus: String (enum: Unpaid, Paid, Partially Paid, Overdue),
+  notes: String,
+  terms: String,
+  currency: String (default: USD),
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### Payment Model
+```javascript
+{
+  invoiceId: ObjectId (ref: Invoice, required),
+  amount: Number (required),
+  method: String (enum: Cash, BankTransfer, Card, Stripe, PayPal),
+  status: String (enum: Pending, Completed, Failed, Refunded),
+  date: Date (required),
+  reference: String,
+  transactionId: String,
+  metadata: Object,
+  refundId: String,
+  refundedAmount: Number,
+  refundedAt: Date,
+  notes: String,
+  processedBy: ObjectId (ref: User),
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### PaymentMethod Model
+```javascript
+{
+  userId: ObjectId (ref: User, required),
+  type: String (enum: Cash, BankTransfer, Card, Stripe, PayPal),
+  details: {
+    bankName: String,
+    accountNumber: String,
+    routingNumber: String,
+    cardLast4: String,
+    cardBrand: String,
+    cardExpMonth: Number,
+    cardExpYear: Number,
+    stripeCustomerId: String,
+    stripePaymentMethodId: String,
+    paypalEmail: String,
+    paypalPayerId: String
+  },
+  isDefault: Boolean,
+  isActive: Boolean,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
 ## User Roles
 
-- **ADMIN** - Full system access, can manage all users
-- **ACCOUNTANT** - Limited access, can view and manage accounts
-- **CLIENT** - Basic access, can only view their own profile
+- **ADMIN** - Full system access, can manage all users, invoices, and payments
+- **ACCOUNTANT** - Can manage invoices and payments, view accounts
+- **CLIENT** - Can view their own invoices and make payments
 
 ## Security Features
 
@@ -65,6 +169,10 @@ A complete JWT-based authentication system with role-based access control built 
 - ✅ Input validation with express-validator
 - ✅ Role-based access control middleware
 - ✅ Token refresh mechanism
+- ✅ Stripe webhook signature verification
+- ✅ PayPal webhook validation
+- ✅ Secure transaction ID storage
+- ✅ Payment reconciliation reporting
 
 ## Installation
 
@@ -129,12 +237,28 @@ EMAIL_USER=your_email@gmail.com
 EMAIL_PASS=your_app_password
 EMAIL_FROM=noreply@yourapp.com
 
+# Frontend URL
+FRONTEND_URL=http://localhost:3000
+
 # Rate Limiting
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
 
 # Security
 BCRYPT_SALT_ROUNDS=12
+
+# Stripe Configuration
+STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
+STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key
+STRIPE_WEBHOOK_SECRET=whsec_your_stripe_webhook_secret
+
+# PayPal Configuration
+PAYPAL_CLIENT_ID=your_paypal_client_id
+PAYPAL_CLIENT_SECRET=your_paypal_client_secret
+PAYPAL_MODE=sandbox
+
+# Application Configuration
+APP_NAME=Your Company Name
 ```
 
 ## API Usage Examples
@@ -273,6 +397,7 @@ The system includes comprehensive error handling:
 
 ## Testing
 
+### Authentication & User Management Testing
 Use the provided test accounts or create new ones to test all endpoints. The system includes:
 
 - Input validation for all endpoints
@@ -280,6 +405,28 @@ Use the provided test accounts or create new ones to test all endpoints. The sys
 - Role-based access control
 - Token refresh mechanism
 - Password security
+
+### Payment System Testing
+Run the comprehensive payment system test:
+
+```bash
+node test-payment-system.js
+```
+
+This test covers:
+- ✅ Invoice creation and management
+- ✅ Manual payment recording (Cash, Bank Transfer)
+- ✅ Payment status tracking
+- ✅ Partial payment support
+- ✅ Invoice payment status updates
+- ✅ Payment filtering and pagination
+- ✅ Client access control
+- ✅ Payment reconciliation
+- ✅ Overdue invoice marking
+- ✅ Refund processing
+- ✅ Invoice balance recalculation
+
+For detailed payment system documentation, see [PAYMENT_SYSTEM_README.md](./PAYMENT_SYSTEM_README.md)
 
 ## Security Considerations
 
@@ -314,3 +461,40 @@ Before deploying to production:
 6. Configure proper email service for password resets
 7. Set up monitoring and logging
 8. Consider using a process manager like PM2
+9. Configure Stripe live mode credentials
+10. Configure PayPal live mode credentials
+11. Set up webhook endpoints with proper SSL
+12. Test webhook delivery and signature verification
+13. Enable payment gateway logging and monitoring
+
+## Payment System Features
+
+The system includes a complete payment management solution:
+
+### Supported Payment Methods
+- **Manual Entry**: Cash, Bank Transfer, Card
+- **Stripe**: Credit/Debit card processing with automatic status updates
+- **PayPal**: Order creation and capture with webhook support
+
+### Key Capabilities
+- Invoice creation with line items, tax, and discounts
+- Automatic payment status tracking (Unpaid, Paid, Partially Paid, Overdue)
+- Partial payment support with balance tracking
+- Refund processing for both manual and gateway payments
+- Payment reconciliation reports
+- Transaction ID storage for all payments
+- Webhook handling for Stripe and PayPal
+- Role-based access control for payment operations
+
+### Payment Workflow
+1. Admin/Accountant creates invoice for client
+2. Client receives invoice with remaining balance
+3. Payment can be made via:
+   - Manual entry by admin/accountant
+   - Stripe online payment
+   - PayPal online payment
+4. Payment automatically updates invoice status
+5. Webhooks confirm online payments
+6. System tracks all transactions with audit trail
+
+For complete payment system documentation, API examples, and integration guides, see [PAYMENT_SYSTEM_README.md](./PAYMENT_SYSTEM_README.md)
